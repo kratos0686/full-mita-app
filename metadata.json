@@ -1,0 +1,9 @@
+{
+  "name": "Restoration | Mitigation™",
+  "description": "Professional water mitigation documentation software for technicians. Features AR scanning, moisture tracking, and real-time cloud syncing.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
