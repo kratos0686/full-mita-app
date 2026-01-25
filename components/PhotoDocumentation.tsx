@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Camera, Plus, Search, Tag, Filter, Grid, Image as ImageIcon, Sparkles, BrainCircuit, Loader2, Wand2, XCircle, FileText, Share2, ChevronRight, Scan, Cuboid, Palette, Movie, Settings2, Video, Send, Check, X, Maximize2 } from 'lucide-react';
+import { Camera, Plus, Search, Tag, Filter, Grid, Image as ImageIcon, Sparkles, BrainCircuit, Loader2, Wand2, XCircle, FileText, Share2, ChevronRight, Scan, Cuboid, Palette, Film, Settings2, Video, Send, Check, X, Maximize2 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { blobToBase64 } from '../utils/photoutils';
 
@@ -315,7 +315,7 @@ const PhotoDocumentation: React.FC<PhotoDocumentationProps> = ({ onStartScan }) 
                 {photo.type === 'image' && (
                   <>
                     <button onClick={() => setEditingPhoto(photo)} className="p-2 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-white/40"><Wand2 size={16} /></button>
-                    <button onClick={() => setAnimatingPhoto(photo)} className="p-2 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-white/40"><Movie size={16} /></button>
+                    <button onClick={() => setAnimatingPhoto(photo)} className="p-2 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-white/40"><Film size={16} /></button>
                   </>
                 )}
                 <button onClick={() => handleAnalyzePhoto(photo.id, photo.tag)} className="p-2 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-white/40">
@@ -381,7 +381,7 @@ const PhotoDocumentation: React.FC<PhotoDocumentationProps> = ({ onStartScan }) 
                   {animationStatus || 'Veo will generate a cinematic walkthrough based on this site photo.'}
                 </div>
                 <button onClick={handleAnimateVeo} disabled={isAnimating} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-black flex items-center justify-center space-x-2">
-                  {isAnimating ? <Loader2 size={20} className="animate-spin" /> : <Movie size={20} />}
+                  {isAnimating ? <Loader2 size={20} className="animate-spin" /> : <Film size={20} />}
                   <span>Generate Cinematic Walkthrough</span>
                 </button>
               </div>

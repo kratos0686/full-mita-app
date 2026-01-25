@@ -97,7 +97,7 @@ const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onCl
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-          systemInstruction: `S500 Field Expert for ${context}. Be technical and concise.`
+          systemInstruction: `SR-500 Field Expert for ${context}. Be technical and concise.`
         }
       });
       sessionRef.current = await sessionPromise;

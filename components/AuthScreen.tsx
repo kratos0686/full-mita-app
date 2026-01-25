@@ -32,7 +32,7 @@ const AuthScreen: React.FC = () => {
         <p className="text-slate-400 text-sm font-medium leading-relaxed max-w-[280px]">The industry standard for intelligent water mitigation documentation.</p>
       </div>
 
-      <div className="relative z-10 w-full flex flex-col items-center space-y-4">
+      <div className="relative z-10 w-full flex flex-col items-center">
           <div className="w-full bg-white/5 border border-white/10 rounded-[2.5rem] p-6 text-center backdrop-blur-md">
               <div className="flex justify-center mb-4"><div className="p-3 bg-indigo-500/20 rounded-2xl border border-indigo-500/30 shadow-lg"><BrainCircuit size={24} className="text-indigo-300" /></div></div>
               <h2 className="text-lg font-bold text-white mb-2">Enable Enterprise AI Core</h2>
@@ -42,9 +42,8 @@ const AuthScreen: React.FC = () => {
                 <span>Authorize with Google Cloud</span>
               </button>
               <p className="text-slate-500 text-[9px] text-center mt-4 font-bold uppercase tracking-widest">You will be prompted to select a paid project.</p>
+              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center justify-center text-blue-500 text-[10px] font-black uppercase tracking-widest hover:text-blue-400 transition-colors bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20">Learn about Project &amp; Billing Setup <ExternalLink size={10} className="ml-2" /></a>
           </div>
-           {/* FIX: Corrected invalid JSX by removing extra tag around text. */}
-           <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-blue-500 text-[10px] font-black uppercase tracking-widest flex items-center hover:text-blue-400 transition-colors bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20">Learn about Project &amp; Billing Setup <ExternalLink size={10} className="ml-2" /></a>
       </div>
 
       <div className="grid grid-cols-2 gap-4 w-full">

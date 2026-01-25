@@ -351,7 +351,19 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
         <>
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
           {isIOS && <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none opacity-60" />}
+          
+          <div className="absolute inset-0 z-5 pointer-events-none scanner-overlay flex items-center justify-center">
+            <div className="w-40 h-40 relative">
+              <div className="absolute top-1/2 -translate-y-1/2 left-0 w-4 h-px bg-white/80"></div>
+              <div className="absolute top-1/2 -translate-y-1/2 right-0 w-4 h-px bg-white/80"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 top-0 w-px h-4 bg-white/80"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-px h-4 bg-white/80"></div>
+              <div className="absolute inset-0 rounded-full border border-white/20 animate-pulse"></div>
+            </div>
+          </div>
+
           <div data-testid="scan-area" className="absolute inset-0 z-10" onClick={isIOS ? addCorner : undefined} />
+          
           <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between">
             <div className="p-4 pt-12 bg-gradient-to-b from-black/80 to-transparent">
               <div className="flex justify-between items-start">
@@ -373,7 +385,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
               {!isIOS && (
                 <div className="mb-4">
                   <p className="text-white/80 text-xs text-center font-bold mb-3">Capture at least 3 photos from different angles.</p>
-                  <div className="flex items-center space-x-2 h-16 bg-black/30 backdrop-blur-md rounded-xl p-2 overflow-x-auto">
+                  <div className="flex items-center space-x-2 h-16 bg-black/30 backdrop-blur-md rounded-xl p-2 overflow-x-auto no-scrollbar">
                     {capturedImages.map(img => <img key={img.id} src={img.url} className="h-full rounded-md" />)}
                   </div>
                 </div>

@@ -7,7 +7,7 @@ import {
   AlertTriangle, 
   Share2, 
   Info,
-  ChevronRight,
+  ArrowLeft,
   Clock,
   CheckCircle2
 } from 'lucide-react';
@@ -63,7 +63,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
     <div className="p-4 space-y-6 pb-24">
       <header className="flex items-center space-x-3">
         <button onClick={onBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-900">
-          <ChevronRight className="rotate-180" size={24} />
+          <ArrowLeft size={24} />
         </button>
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Drying Insight</h2>

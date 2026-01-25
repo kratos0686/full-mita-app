@@ -1,7 +1,8 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import { addScanToProject as mockAddScanToProject, RoomScan } from '../data/mockApi';
 
-export type Tab = 'dashboard' | 'scanner' | 'logs' | 'equipment' | 'photos' | 'project' | 'analysis' | 'reference' | 'forms';
+export type Tab = 'dashboard' | 'scanner' | 'logs' | 'equipment' | 'photos' | 'project' | 'analysis' | 'reference' | 'forms' | 'new-project' | 'billing';
 
 interface AppContextType {
   activeTab: Tab;
@@ -10,6 +11,7 @@ interface AppContextType {
   setSelectedProjectId: (id: string | null) => void;
   isAuthenticated: boolean | null;
   setAuthentication: (status: boolean) => void;
+  addScanToProject: (projectId: string, scan: RoomScan) => Promise<void>;
 }
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -20,23 +22,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const checkAuthStatus = async () => {
-      // Short delay to allow splash screen to show
-      await new Promise(resolve => setTimeout(resolve, 1200)); 
-      if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setIsAuthenticated(hasKey);
-      } else {
-        // Fallback for non-AI Studio environments
-        setIsAuthenticated(true); // Default to authenticated for local dev
-      }
-    };
-    checkAuthStatus();
+    const timer = setTimeout(() => {
+      setIsAuthenticated(false);
+    }, 1500); 
+
+    return () => clearTimeout(timer);
   }, []);
   
   const setAuthentication = (status: boolean) => {
     setIsAuthenticated(status);
   }
+  
+  const addScanToProject = async (projectId: string, scan: RoomScan) => {
+    await mockAddScanToProject(projectId, scan);
+  };
 
   const value = {
     activeTab,
@@ -44,7 +43,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     selectedProjectId,
     setSelectedProjectId,
     isAuthenticated,
-    setAuthentication
+    setAuthentication,
+    addScanToProject,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

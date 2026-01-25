@@ -11,8 +11,14 @@
             font-family: 'Inter', sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
+        @keyframes scanner-pulse {
+            0% { background: radial-gradient(circle, transparent 30%, rgba(0,0,0,0.4) 100%); }
+            50% { background: radial-gradient(circle, transparent 35%, rgba(0,0,0,0.5) 100%); }
+            100% { background: radial-gradient(circle, transparent 30%, rgba(0,0,0,0.4) 100%); }
+        }
         .scanner-overlay {
             background: radial-gradient(circle, transparent 30%, rgba(0,0,0,0.4) 100%);
+            animation: scanner-pulse 3s infinite ease-in-out;
         }
         .glass {
             background: rgba(255, 255, 255, 0.7);

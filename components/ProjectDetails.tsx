@@ -1,161 +1,188 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  CheckCircle2, 
-  MapPin, 
-  Calendar, 
-  FileText, 
-  ChevronRight,
-  ShieldCheck,
-  AlertCircle,
-  Clock,
-  BrainCircuit,
-  Printer,
-  Loader2
+  CheckCircle2, MapPin, Calendar, ShieldCheck, AlertCircle, Clock,
+  BrainCircuit, Printer, Loader2, Scan, Droplets, ClipboardList, Download, Cuboid, Eye
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useAppContext } from '../context/AppContext';
-import { getProjectById, Project } from '../data/mockApi';
+import { getProjectById, Project, AITask, RoomScan } from '../data/mockApi';
 import SkeletonLoader from './SkeletonLoader';
+import WalkthroughViewer from './WalkthroughViewer';
+import ComplianceChecklist from './ComplianceChecklist';
+
+const StatusBadge = ({ status }: { status: string }) => {
+  let colorClasses = 'bg-gray-100 text-gray-800';
+  let dotClasses = 'bg-gray-400';
+  const lowerStatus = status.toLowerCase();
+  if (lowerStatus.includes('drying')) { colorClasses = 'bg-blue-100 text-blue-800'; dotClasses = 'bg-blue-500 animate-pulse'; }
+  else if (lowerStatus.includes('assessment')) { colorClasses = 'bg-indigo-100 text-indigo-800'; dotClasses = 'bg-indigo-500 animate-pulse'; }
+  else if (lowerStatus.includes('completed')) { colorClasses = 'bg-green-100 text-green-800'; dotClasses = 'bg-green-500'; }
+  else if (lowerStatus.includes('paid')) { colorClasses = 'bg-emerald-100 text-emerald-800'; dotClasses = 'bg-emerald-500'; }
+  return (<div className={`inline-flex items-center px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest ${colorClasses}`}><div className={`w-2 h-2 rounded-full mr-2.5 ${dotClasses}`} /><span>{status}</span></div>);
+};
 
 const ProjectDetails: React.FC = () => {
   const { selectedProjectId, setActiveTab } = useAppContext();
   const [project, setProject] = useState<Project | null>(null);
-  const [currentDateTime, setCurrentDateTime] = useState('');
-  const [aiSummary, setAiSummary] = useState("");
-  const [aiNextStep, setAiNextStep] = useState("");
+  const [tasks, setTasks] = useState<AITask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  
+  const [viewingScan, setViewingScan] = useState<RoomScan | null>(null);
 
   useEffect(() => {
-    const formatDateTime = () => new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-    setCurrentDateTime(formatDateTime());
-    const interval = setInterval(() => setCurrentDateTime(formatDateTime()), 60000);
-
-    const loadProjectData = async () => {
-      if (!selectedProjectId) {
+    const fetchProject = async () => {
+      if (selectedProjectId) {
+        setIsLoading(true);
+        const proj = await getProjectById(selectedProjectId);
+        setProject(proj);
+        setTasks(proj?.tasks || []);
         setIsLoading(false);
-        return;
-      };
-      setIsLoading(true);
-      const projectData = await getProjectById(selectedProjectId);
-      setProject(projectData);
-
-      if (projectData) {
-        try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `
-            Project Milestones: ${JSON.stringify(projectData.milestones)}.
-            Analyze this water mitigation project's progress.
-            1. Provide a concise, 1-sentence 'summary' of the current project status based on the active milestone.
-            2. Provide a clear, actionable 'nextStep' for the technician based on the active milestone.
-          `;
-          const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
-          
-          const text = response.text || "";
-          const summaryMatch = text.match(/summary'?:? "([^"]+)"/i);
-          const nextStepMatch = text.match(/nextStep'?:? "([^"]+)"/i);
-
-          setAiSummary(summaryMatch ? summaryMatch[1] : "Project is currently in the active drying phase.");
-          setAiNextStep(nextStepMatch ? nextStepMatch[1] : "Submit daily atmospheric logs for IICRC compliance.");
-
-        } catch (error) {
-          console.error("AI Insight fetch failed:", error);
-          setAiSummary("Could not connect to AI. Project is in 'Drying Monitoring' phase.");
-          setAiNextStep("Submit daily atmospheric logs to maintain IICRC compliance for this project.");
-        }
       }
-      setIsLoading(false);
     };
-
-    loadProjectData();
-    return () => clearInterval(interval);
+    fetchProject();
   }, [selectedProjectId]);
 
-  const handleGeneratePdf = async () => {
+  const generateTasks = async () => {
     if (!project) return;
-    setIsGeneratingPdf(true);
-    const pdfElement = document.getElementById('pdf-content');
-    if (!pdfElement) {
-        console.error("PDF content element not found!");
-        setIsGeneratingPdf(false);
-        return;
-    }
-
+    setIsGeneratingTasks(true);
     try {
-        const canvas = await html2canvas(pdfElement, { scale: 2 });
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const imgProps= pdf.getImageProperties(imgData);
-        const ratio = imgProps.width / imgProps.height;
-        let finalImgWidth = pdfWidth - 20;
-        let finalImgHeight = finalImgWidth / ratio;
-        if (finalImgHeight > pdfHeight - 20) {
-            finalImgHeight = pdfHeight - 20;
-            finalImgWidth = finalImgHeight * ratio;
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Project status: ${project.status}. Milestones: ${JSON.stringify(project.milestones)}. Create a list of 3 actionable tasks for the technician.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              tasks: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["tasks"]
+          }
         }
-        const x = (pdfWidth - finalImgWidth) / 2;
-        pdf.addImage(imgData, 'PNG', x, 10, finalImgWidth, finalImgHeight);
-        pdf.save(`Project-Report-${project.id}.pdf`);
-    } catch (error) {
-        console.error("Failed to generate PDF:", error);
-    } finally {
-        setIsGeneratingPdf(false);
-    }
+      });
+      const result = JSON.parse(response.text);
+      const newTasks: AITask[] = result.tasks.map((t: string, i: number) => ({ id: `ai-${Date.now()}-${i}`, text: t, isCompleted: false }));
+      setTasks(prev => [...prev, ...newTasks]);
+    } catch (err) { console.error(err); } 
+    finally { setIsGeneratingTasks(false); }
   };
-
+  
+  const toggleTask = (taskId: string) => {
+    setTasks(tasks.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t));
+  };
+  
+  const generatePdf = async () => {
+    setIsPrinting(true);
+    const input = document.getElementById('pdf-content');
+    if (input) {
+      const canvas = await html2canvas(input, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Project-Report-${project?.id}.pdf`);
+    }
+    setIsPrinting(false);
+  };
+  
   if (isLoading) {
-    return <div className="p-4 space-y-6"><SkeletonLoader height="180px" borderRadius="1.5rem" /><SkeletonLoader height="250px" borderRadius="1.5rem" /><SkeletonLoader height="100px" borderRadius="1.5rem" /></div>;
+    return (
+      <div className="p-8 space-y-6">
+        <SkeletonLoader height="60px" borderRadius="1.5rem" />
+        <SkeletonLoader count={3} height="120px" borderRadius="1.5rem" />
+      </div>
+    );
+  }
+
+  if (!project) {
+    return <div className="p-8 text-center">Project not found. Please select one from the dashboard.</div>;
   }
   
-  if (!project) {
-    return <div className="p-8 text-center"><p className="text-gray-600">No project selected. Please choose a project from the dashboard.</p><button onClick={() => setActiveTab('dashboard')} className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg font-bold">Go to Dashboard</button></div>;
+  if (viewingScan) {
+    return <WalkthroughViewer scan={viewingScan} onClose={() => setViewingScan(null)} />;
   }
 
   return (
-    <div className="p-4 space-y-6">
-      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4"><div className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-xs font-bold uppercase">{project.id}</div></div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-1">{project.client}</h2>
-        <div className="flex items-center text-gray-500 text-sm mb-2"><MapPin size={16} className="mr-1.5 text-blue-500" />{project.address}</div>
-        <div className="flex items-center text-gray-400 text-[10px] font-black uppercase tracking-widest mb-6"><Clock size={12} className="mr-1.5 text-blue-400" />{currentDateTime}</div>
-        <div className="grid grid-cols-2 gap-4"><div className="flex items-center space-x-3"><div className="p-2 bg-gray-50 rounded-lg text-gray-400"><Calendar size={18} /></div><div><div className="text-[10px] text-gray-400 font-bold uppercase">Start Date</div><div className="text-sm font-bold text-gray-700">{project.startDate}</div></div></div><div className="flex items-center space-x-3"><div className="p-2 bg-gray-50 rounded-lg text-gray-400"><ShieldCheck size={18} /></div><div><div className="text-[10px] text-gray-400 font-bold uppercase">Insurance</div><div className="text-sm font-bold text-gray-700">{project.insurance}</div></div></div></div>
-      </div>
+    <div id="pdf-content" className="p-4 md:p-8 space-y-6">
+      <header className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-sm font-bold text-gray-400">{project.id}</p>
+            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{project.client}</h2>
+          </div>
+          <StatusBadge status={project.status} />
+        </div>
+        <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+          <div className="flex items-center space-x-2"><MapPin size={14} className="text-gray-400" /><span className="font-medium text-gray-700">{project.address}</span></div>
+          <div className="flex items-center space-x-2"><Calendar size={14} className="text-gray-400" /><span className="font-medium text-gray-700">{project.startDate}</span></div>
+          <div className="flex items-center space-x-2"><ShieldCheck size={14} className="text-gray-400" /><span className="font-medium text-gray-700">{project.insurance}</span></div>
+          <div className="flex items-center space-x-2"><Clock size={14} className="text-gray-400" /><span className="font-medium text-gray-700">{project.progress}% Complete</span></div>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-2 mt-6 overflow-hidden"><div className="bg-blue-600 h-2 rounded-full" style={{ width: `${project.progress}%` }} /></div>
+      </header>
+      
+      <ComplianceChecklist project={project} />
 
-      <section className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm">
-        <div className="flex items-start space-x-4 mb-4"><div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><BrainCircuit size={24}/></div><div><h3 className="font-black text-gray-900 tracking-tight">AI Project Summary</h3>{isLoading ? <SkeletonLoader width="200px" /> : <p className="text-xs text-gray-600 mt-0.5 font-medium">{aiSummary}</p>}</div></div>
-        <div className="relative pl-1"><div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-100" /><div className="space-y-6">{project.milestones.map((m, i) => (<div key={i} className="flex items-start relative pl-10"><div className={`absolute left-2.5 -translate-x-1/2 w-3.5 h-3.5 rounded-full z-10 border-2 border-white ${m.status === 'completed' ? 'bg-green-500' : m.status === 'active' ? 'bg-blue-500 ring-4 ring-blue-100' : 'bg-gray-200'}`} /><div className="flex-1"><div className={`text-sm font-bold ${m.status === 'pending' ? 'text-gray-400' : 'text-gray-900'}`}>{m.title}</div><div className="text-xs text-gray-500">{m.date}</div></div>{m.status === 'completed' && <CheckCircle2 size={16} className="text-green-500" />}</div>))}</div></div>
+      <section className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100"><Cuboid size={24} /></div>
+          <div><h3 className="font-black text-gray-900 tracking-tight">3D Environment Scans</h3><p className="text-xs text-gray-500 mt-0.5">Interactive site walkthroughs.</p></div>
+        </div>
+        {project.roomScans.length > 0 ? (
+          <div className="space-y-3">
+            {project.roomScans.map(scan => (
+              <div key={scan.scanId} className="bg-gray-50/70 border border-gray-100 rounded-2xl p-4 flex justify-between items-center">
+                <div><h4 className="font-bold text-sm text-gray-800">{scan.roomName}</h4><p className="text-[10px] text-gray-500 font-medium">{scan.dimensions.sqft.toFixed(1)} sq ft</p></div>
+                <button onClick={() => setViewingScan(scan)} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 hover:bg-emerald-600 transition-colors"><Eye size={14} /><span>Launch Walkthrough</span></button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 bg-gray-50 rounded-2xl border border-gray-100"><p className="text-sm font-bold text-gray-600">No 3D Scans Available</p><p className="text-xs text-gray-400 mt-1">Perform a scan on the mobile app to create a walkthrough.</p></div>
+        )}
       </section>
 
-      <section className="space-y-3"><h3 className="font-bold text-gray-800">Field Documents</h3><div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50"><DocumentRow title="Contract for Services" signed={true} /><DocumentRow title="Scope of Work" signed={true} /><DocumentRow title="Anti-Microbial Release" signed={false} /><DocumentRow title="Final Completion" signed={false} /></div></section>
-
-      <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 flex items-start space-x-3"><AlertCircle size={20} className="text-orange-500 shrink-0" /><div className="text-sm"><p className="font-bold text-orange-900">AI Task Pending</p>{isLoading ? <SkeletonLoader width="250px" /> : <p className="text-orange-700">{aiNextStep}</p>}</div></div>
-
-      <div className="flex items-center space-x-3">
-        <button onClick={() => setActiveTab('logs')} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all"><span>Continue to Monitoring</span><ChevronRight size={20} /></button>
-        <button onClick={handleGeneratePdf} disabled={isGeneratingPdf} className="w-16 h-[56px] bg-gray-100 text-gray-600 rounded-2xl font-bold flex items-center justify-center shadow-sm active:scale-[0.98] transition-all border border-gray-200 disabled:opacity-50" title="Generate PDF Report">{isGeneratingPdf ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}</button>
+      <div className="grid md:grid-cols-2 gap-6">
+        <section className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
+          <h3 className="font-black text-gray-900 tracking-tight mb-4">Project Milestones</h3>
+          <div className="space-y-4">
+            {project.milestones.map((m, i) => (
+              <div key={i} className="flex items-start space-x-3">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${m.status === 'completed' ? 'bg-green-100 text-green-600' : m.status === 'active' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                  {m.status === 'completed' ? <CheckCircle2 size={14} /> : m.status === 'active' ? <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" /> : <div className="w-2 h-2 bg-gray-400 rounded-full" />}
+                </div>
+                <div><p className="font-bold text-sm text-gray-800">{m.title}</p><p className="text-xs text-gray-500">{m.date}</p></div>
+              </div>
+            ))}
+          </div>
+        </section>
+        
+        <section className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
+          <div className="flex justify-between items-start mb-4"><h3 className="font-black text-gray-900 tracking-tight">AI Action Items</h3><button onClick={generateTasks} disabled={isGeneratingTasks} className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-2 border border-blue-100">{isGeneratingTasks ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}<span>{isGeneratingTasks ? 'Thinking' : 'Suggest'}</span></button></div>
+          <div className="space-y-3">
+            {tasks.map(t => (
+              <div key={t.id} onClick={() => toggleTask(t.id)} className={`flex items-start space-x-3 p-3 rounded-xl cursor-pointer ${t.isCompleted ? 'bg-green-50 text-gray-500' : 'bg-gray-50'}`}>
+                <div className={`w-5 h-5 rounded-md flex items-center justify-center border-2 ${t.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300'}`}>{t.isCompleted && <CheckCircle2 size={12} />}</div>
+                <p className={`text-sm font-medium flex-1 ${t.isCompleted ? 'line-through' : ''}`}>{t.text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
-      
-      <div className="absolute -left-[9999px] top-auto w-[800px] bg-white p-10 font-sans" id="pdf-content">
-          <div className="border-b-2 border-gray-200 pb-6 mb-6"><h1 className="text-4xl font-black text-gray-900">Project Field Report</h1><p className="text-gray-500 mt-2">Generated on: {new Date().toLocaleDateString()}</p></div>
-          <div className="grid grid-cols-2 gap-8 text-sm mb-8"><div><p className="text-gray-400 font-bold uppercase text-xs tracking-wider mb-1">Project ID</p><p className="font-bold text-gray-800">{project.id}</p></div><div><p className="text-gray-400 font-bold uppercase text-xs tracking-wider mb-1">Client</p><p className="font-bold text-gray-800">{project.client}</p></div><div><p className="text-gray-400 font-bold uppercase text-xs tracking-wider mb-1">Property</p><p className="font-bold text-gray-800">{project.address}</p></div><div><p className="text-gray-400 font-bold uppercase text-xs tracking-wider mb-1">Start Date</p><p className="font-bold text-gray-800">{project.startDate}</p></div></div>
-          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 mb-8"><h3 className="text-sm font-black text-blue-900 uppercase tracking-wider mb-2">AI Summary</h3><p className="text-blue-800 text-sm leading-relaxed">{aiSummary}</p></div>
-          <div><h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-4">Project Milestones</h3><div className="space-y-4 relative pl-1"><div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-200" />{project.milestones.map((m, i) => (<div key={i} className="flex items-start relative pl-6"><div className={`absolute left-0 top-1 w-4 h-4 rounded-full z-10 border-4 border-white ${m.status === 'completed' ? 'bg-green-500' : m.status === 'active' ? 'bg-blue-500' : 'bg-gray-300'}`} /><div className="flex-1"><p className="font-bold text-gray-800 text-sm">{m.title}</p><p className="text-xs text-gray-500">{m.date}</p></div></div>))}</div></div>
-          <div className="mt-12 text-center text-xs text-gray-400"><p>Restoration | Mitigation™ - CONFIDENTIAL</p></div>
+
+      <div className="flex space-x-4">
+        <button onClick={() => setActiveTab('billing')} className="w-full py-4 bg-gray-100 text-gray-700 rounded-2xl font-bold flex items-center justify-center space-x-2 border border-gray-200 hover:bg-gray-200 transition-colors"><span>Billing</span></button>
+        <button onClick={generatePdf} disabled={isPrinting} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all">{isPrinting ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}<span>{isPrinting ? 'Generating PDF...' : 'Print Report'}</span></button>
       </div>
     </div>
   );
 };
-
-const DocumentRow = ({ title, signed }: { title: string, signed: boolean }) => (
-  <div className="p-4 flex items-center justify-between active:bg-gray-50">
-    <div className="flex items-center space-x-3"><div className="p-2 bg-gray-50 rounded-lg text-gray-500"><FileText size={18} /></div><span className="text-sm font-medium text-gray-700">{title}</span></div>
-    <div className="flex items-center space-x-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${signed ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{signed ? 'Signed' : 'Needed'}</span><ChevronRight size={16} className="text-gray-300" /></div>
-  </div>
-);
 
 export default ProjectDetails;

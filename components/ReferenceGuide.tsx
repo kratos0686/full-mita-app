@@ -19,7 +19,7 @@ const ReferenceGuide: React.FC<ReferenceGuideProps> = ({ onBack }) => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Research this IICRC S500 topic: ${searchQuery}`,
+        contents: `Research this IICRC SR-500 topic: ${searchQuery}`,
         config: { tools: [{ googleSearch: {} }] }
       });
       setSearchResults({
@@ -34,7 +34,7 @@ const ReferenceGuide: React.FC<ReferenceGuideProps> = ({ onBack }) => {
       <header className="flex items-center space-x-3">
         <button onClick={onBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-900"><ArrowLeft size={24} /></button>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">S500 Field Guide</h2>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">SR-500 Field Guide</h2>
           <p className="text-sm text-gray-500 font-medium">Mitigation Intelligence Network</p>
         </div>
       </header>
