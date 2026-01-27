@@ -53,14 +53,12 @@ const NewProject: React.FC = () => {
             insurance,
             status: 'Initial Assessment',
             startDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-            rooms: 1,
-            estimate: 'TBD',
             logs: 'No logs yet.',
-            // FIX: Add missing properties required by the `addProject` function signature.
             clientEmail: 'TBD',
             clientPhone: 'TBD',
             policyNumber: 'TBD',
             adjuster: 'TBD',
+            estimate: 'TBD'
         };
 
         try {

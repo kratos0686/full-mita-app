@@ -1,17 +1,20 @@
 
 import React, { useState, useCallback, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCcw, Image as ImageIcon, Camera } from 'lucide-react';
-import { RoomScan, PlacedPhoto } from '../data/mockApi';
+import { X, ZoomIn, ZoomOut, RotateCcw, Image as ImageIcon, Camera, Box, Grid3X3 } from 'lucide-react';
+import { RoomScan, PlacedPhoto } from '../types';
 
 interface WalkthroughViewerProps {
   scan: RoomScan;
   onClose: () => void;
 }
 
+type RenderMode = 'solid' | 'wireframe';
+
 const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) => {
   const [rotation, setRotation] = useState({ x: 35, y: 0, z: -45 });
   const [zoom, setZoom] = useState(0.8);
   const [selectedPhoto, setSelectedPhoto] = useState<PlacedPhoto | null>(null);
+  const [renderMode, setRenderMode] = useState<RenderMode>('solid');
 
   const isInteracting = useRef(false);
   const lastInteractionPos = useRef<{ x: number; y: number } | null>(null);
@@ -59,17 +62,39 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
   const widthRem = aspectRatio >= 1 ? baseSize : baseSize * aspectRatio;
   const lengthRem = aspectRatio < 1 ? baseSize : baseSize / aspectRatio;
 
+  const isWireframe = renderMode === 'wireframe';
+
+  // Styles based on Render Mode
+  const wallStyle = isWireframe 
+    ? { background: 'rgba(59, 130, 246, 0.05)', border: '1px solid #3b82f6' } 
+    : { backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)', backgroundColor: '#e5e7eb', borderBottom: '2px solid #d1d5db' };
+  
+  const floorStyle = isWireframe
+    ? { background: 'transparent', border: '1px solid #3b82f6', opacity: 0.5 }
+    : { backgroundImage: 'url(https://www.transparenttextures.com/patterns/wood-pattern.png)', backgroundColor: '#d1d5db', backgroundSize: '80px' };
+
   return (
-    <div className="fixed inset-0 bg-gray-800 z-[100] flex flex-col animate-in fade-in duration-300">
-      <header className="flex items-center justify-between p-4 bg-gray-900/50 backdrop-blur-sm text-white border-b border-white/10 z-20">
+    <div className="fixed inset-0 bg-gray-900 z-[100] flex flex-col animate-in fade-in duration-300">
+      <header className="flex items-center justify-between p-4 bg-gray-900/80 backdrop-blur-md text-white border-b border-white/10 z-20">
         <div className="flex items-center space-x-3">
-          <div className="p-2 bg-emerald-500/20 rounded-lg"><ImageIcon size={20} /></div>
-          <div><h3 className="font-bold">{scan.roomName} Walkthrough</h3><p className="text-[10px] uppercase font-bold opacity-60">{scan.dimensions.sqft.toFixed(1)} SQ FT</p></div>
+          <div className="p-2 bg-emerald-500/20 rounded-lg"><ImageIcon size={20} className="text-emerald-400"/></div>
+          <div><h3 className="font-bold">{scan.roomName} Walkthrough</h3><p className="text-[10px] uppercase font-bold text-slate-400">{scan.dimensions.sqft.toFixed(1)} SQ FT • {scan.dimensions.length.toFixed(1)}' x {scan.dimensions.width.toFixed(1)}'</p></div>
         </div>
-        <button onClick={onClose} className="p-2 bg-white/10 rounded-full"><X size={20} /></button>
+        
+        <div className="flex items-center space-x-2 bg-black/40 rounded-lg p-1 border border-white/10">
+             <button onClick={() => setRenderMode('solid')} className={`p-2 rounded-md transition-all ${renderMode === 'solid' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`} title="Solid View"><Box size={16} /></button>
+             <button onClick={() => setRenderMode('wireframe')} className={`p-2 rounded-md transition-all ${renderMode === 'wireframe' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`} title="Wireframe View"><Grid3X3 size={16} /></button>
+        </div>
+
+        <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={20} /></button>
       </header>
 
       <main className="flex-1 flex items-center justify-center overflow-hidden relative" onWheel={handleWheel}>
+        {/* Grid Background */}
+        <div className="absolute inset-0 pointer-events-none opacity-20" 
+             style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+        />
+
         <div 
           className="w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
           onMouseDown={handleInteractionStart} onMouseMove={handleInteractionMove} onMouseUp={handleInteractionEnd} onMouseLeave={handleInteractionEnd}
@@ -78,40 +103,69 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
         >
           <div className="relative transition-transform duration-300" style={{ transform: `scale(${zoom})`, transformStyle: 'preserve-3d' }}>
             <div className="relative" style={{ transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`, transformStyle: 'preserve-3d', width: `${widthRem}rem`, height: `${lengthRem}rem` }}>
+              
               {/* Floor */}
-              <div className="absolute inset-0 bg-gray-300" style={{ transform: `translateZ(-${wallHeightRem / 2}rem) rotateX(90deg)`, backgroundImage: 'url(https://www.transparenttextures.com/patterns/wood-pattern.png)', backgroundSize: '80px' }}>
-                {scan.placedPhotos.map(photo => (
-                  <button key={photo.photoId} onClick={() => setSelectedPhoto(photo)} className="absolute w-8 h-8 -m-4 flex items-center justify-center group" style={{ left: `${photo.x}%`, top: `${photo.y}%` }}>
-                    <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-pulse group-hover:opacity-50" />
-                    <div className="relative w-4 h-4 bg-white rounded-full flex items-center justify-center text-blue-600 shadow-lg"><Camera size={10} /></div>
+              <div className="absolute inset-0" style={{ transform: `translateZ(-${wallHeightRem / 2}rem) rotateX(90deg)`, ...floorStyle }}>
+                 {/* Floor Grid in Wireframe */}
+                 {isWireframe && <div className="absolute inset-0" style={{backgroundImage: 'linear-gradient(rgba(59, 130, 246, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.3) 1px, transparent 1px)', backgroundSize: '20px 20px'}} />}
+                 
+                 {/* Photo Markers */}
+                 {scan.placedPhotos.map(photo => (
+                  <button key={photo.id} onClick={() => setSelectedPhoto(photo)} className="absolute w-8 h-8 -m-4 flex items-center justify-center group z-10" style={{ left: `${photo.x}%`, top: `${photo.y}%`, transform: 'rotateX(-90deg)' }}>
+                    <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-pulse group-hover:opacity-50 shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
+                    <div className="relative w-4 h-4 bg-white rounded-full flex items-center justify-center text-blue-600 shadow-lg ring-2 ring-blue-400"><Camera size={10} /></div>
+                    <div className="absolute -top-8 bg-black/80 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        View Photo
+                    </div>
                   </button>
                 ))}
               </div>
-              {/* Ceiling */}
-              <div className="absolute inset-0 bg-gray-200" style={{ transform: `translateZ(${wallHeightRem / 2}rem) rotateX(90deg)` }} />
-              {/* Walls */}
+
+              {/* Ceiling (Wireframe Only) */}
+              {isWireframe && <div className="absolute inset-0 border border-blue-500/30 bg-blue-500/5" style={{ transform: `translateZ(${wallHeightRem / 2}rem) rotateX(90deg)` }} />}
+
+              {/* Walls Container */}
               <div className="absolute w-full h-full" style={{ transform: `translateZ(-${wallHeightRem / 2}rem)`, transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gray-200 border-b-2 border-gray-300" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${lengthRem / 2}rem)`, backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)' }} />
-                <div className="absolute inset-0 bg-gray-200 border-b-2 border-gray-300" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${lengthRem / 2}rem)`, backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)' }} />
-                <div className="absolute inset-0 bg-gray-200 border-b-2 border-gray-300" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(90deg) translateZ(${widthRem / 2}rem)`, backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)' }} />
-                <div className="absolute inset-0 bg-gray-200 border-b-2 border-gray-300" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem / 2}rem)`, backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)' }} />
+                 {/* Front Wall */}
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                {/* Back Wall */}
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, opacity: isWireframe ? 1 : 0.3 }} />
+                {/* Left Wall */}
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                {/* Right Wall */}
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
               </div>
+              
+              {/* Measurement Labels (Always visible for context) */}
+              <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10">{dimensions.width.toFixed(1)}' Width</div>
+              <div className="absolute -left-12 top-1/2 -translate-y-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10" style={{transform: 'rotate(-90deg)'}}>{dimensions.length.toFixed(1)}' Length</div>
+              <div className="absolute -right-12 top-1/2 -translate-y-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10" style={{transform: 'rotate(90deg)'}}>8.0' Height</div>
             </div>
           </div>
         </div>
       </main>
 
-      <div className="absolute bottom-4 left-4 right-4 flex justify-center items-center space-x-2 z-20 pointer-events-none">
-        <div className="bg-gray-900/50 backdrop-blur-sm text-white p-2 rounded-full flex space-x-1 pointer-events-auto">
-          <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="p-2 hover:bg-white/20 rounded-full"><ZoomOut size={18} /></button>
-          <button onClick={resetView} className="p-2 hover:bg-white/20 rounded-full"><RotateCcw size={18} /></button>
-          <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="p-2 hover:bg-white/20 rounded-full"><ZoomIn size={18} /></button>
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex justify-center items-center space-x-2 z-20 pointer-events-none">
+        <div className="bg-black/60 backdrop-blur-md text-white p-2 rounded-2xl border border-white/10 flex space-x-2 pointer-events-auto shadow-xl">
+          <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="p-3 hover:bg-white/10 rounded-xl transition-colors"><ZoomOut size={20} /></button>
+          <button onClick={resetView} className="p-3 hover:bg-white/10 rounded-xl transition-colors border-l border-r border-white/10"><RotateCcw size={20} /></button>
+          <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="p-3 hover:bg-white/10 rounded-xl transition-colors"><ZoomIn size={20} /></button>
         </div>
       </div>
 
       {selectedPhoto && (
-        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-30 animate-in fade-in" onClick={() => setSelectedPhoto(null)}>
-          <img src={selectedPhoto.url} onClick={e => e.stopPropagation()} className="max-w-[80vw] max-h-[80vh] rounded-lg shadow-2xl animate-in zoom-in" alt={`Site photo ${selectedPhoto.photoId}`} />
+        <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-30 animate-in fade-in duration-200" onClick={() => setSelectedPhoto(null)}>
+          <div className="relative max-w-4xl w-full p-4" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setSelectedPhoto(null)} className="absolute -top-12 right-4 text-white hover:text-gray-300"><X size={32}/></button>
+              <img src={selectedPhoto.url} className="w-full h-auto max-h-[80vh] object-contain rounded-xl shadow-2xl ring-1 ring-white/20 animate-in zoom-in-95 duration-300" alt={`Site photo ${selectedPhoto.id}`} />
+              <div className="mt-4 flex justify-between items-center text-white">
+                  <div>
+                      <h4 className="font-bold text-lg">Site Photo</h4>
+                      <p className="text-sm text-gray-400">Captured at coordinates {selectedPhoto.x.toFixed(0)}, {selectedPhoto.y.toFixed(0)}</p>
+                  </div>
+                  {/* Future: Add notes/tags display here */}
+              </div>
+          </div>
         </div>
       )}
     </div>

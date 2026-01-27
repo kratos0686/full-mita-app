@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { X, Camera, Ruler, Square, Check, RefreshCw, Zap, Plus, Cuboid, Layers, Share2, ArrowLeft, Maximize2, ScanLine, BrainCircuit, Orbit } from 'lucide-react';
+import { X, Camera, Ruler, Square, Check, RefreshCw, Zap, Plus, Cuboid, Layers, Share2, ArrowLeft, Maximize2, ScanLine, BrainCircuit, Orbit, Box, Grid3X3 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { blobToBase64 } from '../utils/photoutils';
 
@@ -11,45 +11,40 @@ interface ARScannerProps {
 type Point = { x: number; y: number; id: number };
 type Mode = 'scan' | 'processing' | 'result';
 type View = '2d' | '3d';
+type RenderMode = 'solid' | 'wireframe';
 
 const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mode, setMode] = useState<Mode>('scan');
   const [resultView, setResultView] = useState<View>('2d');
+  const [renderMode, setRenderMode] = useState<RenderMode>('solid');
   const [corners, setCorners] = useState<Point[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [lidarEnabled, setLidarEnabled] = useState(true);
   const [isIOS, setIsIOS] = useState(false);
 
-  // State for AI Photogrammetry (Android/non-iOS)
   const [capturedImages, setCapturedImages] = useState<{ id: number; url: string; base64: string }[]>([]);
   const [aiGeneratedSvg, setAiGeneratedSvg] = useState<string>('');
   const [aiDimensions, setAiDimensions] = useState<{ length: number; width: number; sqft: number } | null>(null);
-
   const [aiRoomLabel, setAiRoomLabel] = useState<string>('');
   const [aiDamageAssessment, setAiDamageAssessment] = useState<string>('');
   const [processingMessage, setProcessingMessage] = useState<string>("Generating point cloud & measurements...");
 
-  // State for 3D view interaction
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 45 });
   const [zoom, setZoom] = useState(1);
   const isInteracting = useRef(false);
   const lastInteractionPos = useRef<{ x: number, y: number } | null>(null);
   const lastPinchDist = useRef<number | null>(null);
 
-
   useEffect(() => {
     setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent));
   }, []);
 
   useEffect(() => {
-    if (mode === 'scan') {
-        startCamera();
-    } else {
-        stopCamera();
-    }
+    if (mode === 'scan') startCamera();
+    else stopCamera();
     return () => stopCamera();
   }, [mode]);
 
@@ -91,12 +86,8 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) videoRef.current.srcObject = stream;
       setIsScanning(true);
     } catch (err) {
       setPermissionError('Camera access required for 3D scanning.');
@@ -141,12 +132,8 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
     setMode('processing');
     setProcessingMessage("Analyzing spatial data with MitigationAI™...");
     
-    // Non-iOS Photogrammetry Flow
     if (!isIOS) {
-        if (capturedImages.length < 3) {
-            setMode('scan'); 
-            return;
-        };
+        if (capturedImages.length < 3) { setMode('scan'); return; };
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const imageParts = capturedImages.map(img => ({ inlineData: { mimeType: 'image/jpeg', data: img.base64 } }));
@@ -185,13 +172,10 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
             console.error("AI Photogrammetry failed:", error);
             setAiRoomLabel("AI Scan Failed");
             setAiDamageAssessment("Could not process images. Please try again with clearer photos.");
-        } finally {
-            setMode('result');
-        }
+        } finally { setMode('result'); }
         return;
     }
 
-    // iOS Corner-Marking Flow
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `A room was scanned for water mitigation. The floor area is ${calculateArea()} sq ft with an 8-foot ceiling. 1. Based on these dimensions, suggest a probable 'roomLabel'. 2. Provide a brief 'damageAssessment' sentence.`;
@@ -205,9 +189,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
         console.error("AI Scan Analysis failed:", error);
         setAiRoomLabel("Room Scan");
         setAiDamageAssessment("Dimensions captured. AI analysis unavailable.");
-    } finally {
-        setMode('result');
-    }
+    } finally { setMode('result'); }
   };
 
   const calculateArea = () => {
@@ -224,20 +206,14 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   const processedFloorPlan = useMemo(() => {
     if (corners.length < 3) return null;
     const padding = 10; 
-    const minX = Math.min(...corners.map(p => p.x)); 
-    const maxX = Math.max(...corners.map(p => p.x)); 
-    const minY = Math.min(...corners.map(p => p.y)); 
-    const maxY = Math.max(...corners.map(p => p.y)); 
-    const width = maxX - minX; 
-    const height = maxY - minY; 
+    const minX = Math.min(...corners.map(p => p.x)); const maxX = Math.max(...corners.map(p => p.x)); 
+    const minY = Math.min(...corners.map(p => p.y)); const maxY = Math.max(...corners.map(p => p.y)); 
+    const width = maxX - minX; const height = maxY - minY; 
     if (width === 0 || height === 0) return null; 
-    const svgWidth = 100 - 2 * padding; 
-    const svgHeight = 100 - 2 * padding; 
+    const svgWidth = 100 - 2 * padding; const svgHeight = 100 - 2 * padding; 
     const scale = Math.min(svgWidth / width, svgHeight / height); 
-    const scaledWidth = width * scale; 
-    const scaledHeight = height * scale; 
-    const offsetX = (100 - scaledWidth) / 2; 
-    const offsetY = (100 - scaledHeight) / 2;
+    const scaledWidth = width * scale; const scaledHeight = height * scale; 
+    const offsetX = (100 - scaledWidth) / 2; const offsetY = (100 - scaledHeight) / 2;
     const scaledCorners = corners.map(p => ({ x: ((p.x - minX) * scale) + offsetX, y: ((p.y - minY) * scale) + offsetY }));
     const pointsString = scaledCorners.map(p => `${p.x},${p.y}`).join(' ');
     return { scaledCorners, pointsString, width, height };
@@ -245,12 +221,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
 
   if (permissionError) {
     return (
-      <div className="h-full bg-gray-900 text-white flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-4"><ScanLine size={32} /></div>
-        <h2 className="text-xl font-bold mb-2">Scanner Unavailable</h2>
-        <p className="text-gray-400 text-sm mb-6">{permissionError}</p>
-        <button onClick={() => window.location.reload()} className="bg-white text-black px-6 py-3 rounded-full font-bold">Retry Access</button>
-      </div>
+      <div className="h-full bg-gray-900 text-white flex flex-col items-center justify-center p-8 text-center"><div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-4"><ScanLine size={32} /></div><h2 className="text-xl font-bold mb-2">Scanner Unavailable</h2><p className="text-gray-400 text-sm mb-6">{permissionError}</p><button onClick={() => window.location.reload()} className="bg-white text-black px-6 py-3 rounded-full font-bold">Retry Access</button></div>
     );
   }
 
@@ -274,59 +245,43 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   
   const iosDimensions = useMemo(() => {
     if (!isIOS || !processedFloorPlan) return null;
-    // This is an arbitrary scaling factor for visual representation.
     const PIXELS_PER_FOOT = 20; 
     const length = (processedFloorPlan.height / PIXELS_PER_FOOT).toFixed(1);
     const width = (processedFloorPlan.width / PIXELS_PER_FOOT).toFixed(1);
     return { length, width };
   }, [isIOS, processedFloorPlan]);
 
-
-  // --- 3D Interaction Handlers ---
   const handleInteractionStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     isInteracting.current = true;
     if ('touches' in e) {
-      if (e.touches.length === 2) { // Pinch
+      if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         lastPinchDist.current = Math.sqrt(dx * dx + dy * dy);
-      } else { // Single touch
-        lastInteractionPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      }
-    } else { // Mouse
-      lastInteractionPos.current = { x: e.clientX, y: e.clientY };
-    }
+      } else { lastInteractionPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }
+    } else { lastInteractionPos.current = { x: e.clientX, y: e.clientY }; }
   }, []);
 
   const handleInteractionMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isInteracting.current) return;
-    
     if ('touches' in e) {
-      if (e.touches.length === 2 && lastPinchDist.current !== null) { // Pinch-zoom
+      if (e.touches.length === 2 && lastPinchDist.current !== null) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         setZoom(prev => Math.max(0.5, Math.min(3, prev + (dist - (lastPinchDist.current ?? dist)) * 0.01)));
         lastPinchDist.current = dist;
-      } else if (e.touches.length === 1 && lastInteractionPos.current) { // Single-touch rotate
+      } else if (e.touches.length === 1 && lastInteractionPos.current) {
         const dx = e.touches[0].clientX - lastInteractionPos.current.x;
         const dy = e.touches[0].clientY - lastInteractionPos.current.y;
-        setRotation(prev => ({
-          x: prev.x - dy * 0.5,
-          y: prev.y,
-          z: prev.z + dx * 0.5,
-        }));
+        setRotation(prev => ({ x: prev.x - dy * 0.5, y: prev.y, z: prev.z + dx * 0.5 }));
         lastInteractionPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       }
-    } else { // Mouse rotate
+    } else {
       if (lastInteractionPos.current) {
         const dx = e.clientX - lastInteractionPos.current.x;
         const dy = e.clientY - lastInteractionPos.current.y;
-        setRotation(prev => ({
-          x: prev.x - dy * 0.5,
-          y: prev.y,
-          z: prev.z + dx * 0.5,
-        }));
+        setRotation(prev => ({ x: prev.x - dy * 0.5, y: prev.y, z: prev.z + dx * 0.5 }));
         lastInteractionPos.current = { x: e.clientX, y: e.clientY };
       }
     }
@@ -336,14 +291,12 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
     isInteracting.current = false;
     lastInteractionPos.current = null;
     lastPinchDist.current = null;
-    // Force a re-render to re-enable transitions
-    setRotation(r => ({...r})); 
+    // Keep rotation as is to allow user set view
   }, []);
   
   const handleWheel = useCallback((e: React.WheelEvent) => {
     setZoom(prev => Math.max(0.5, Math.min(3, prev - e.deltaY * 0.01)));
   }, []);
-
 
   return (
     <div className="relative h-full bg-black overflow-hidden flex flex-col font-sans">
@@ -351,151 +304,129 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
         <>
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
           {isIOS && <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none opacity-60" />}
-          
-          <div className="absolute inset-0 z-5 pointer-events-none scanner-overlay flex items-center justify-center">
-            <div className="w-40 h-40 relative">
-              <div className="absolute top-1/2 -translate-y-1/2 left-0 w-4 h-px bg-white/80"></div>
-              <div className="absolute top-1/2 -translate-y-1/2 right-0 w-4 h-px bg-white/80"></div>
-              <div className="absolute left-1/2 -translate-x-1/2 top-0 w-px h-4 bg-white/80"></div>
-              <div className="absolute left-1/2 -translate-x-1/2 bottom-0 w-px h-4 bg-white/80"></div>
-              <div className="absolute inset-0 rounded-full border border-white/20 animate-pulse"></div>
-            </div>
-          </div>
-
           <div data-testid="scan-area" className="absolute inset-0 z-10" onClick={isIOS ? addCorner : undefined} />
-          
           <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between">
-            <div className="p-4 pt-12 bg-gradient-to-b from-black/80 to-transparent">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="flex items-center space-x-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" /><span className="text-xs font-black text-green-400 uppercase tracking-widest">{isIOS ? 'LiDAR Active' : 'AI Photogrammetry'}</span></div>
-                  <h2 className="text-white font-bold text-lg mt-1">Room Scan</h2>
-                </div>
-                <button onClick={onComplete} className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white pointer-events-auto active:scale-95">
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            {isIOS && corners.map((p) => (
-              <div key={p.id} className="absolute w-6 h-6 -ml-3 -mt-3 flex items-center justify-center" style={{ left: p.x, top: p.y }}>
-                <div className="w-3 h-3 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-in zoom-in duration-200" />
-              </div>
-            ))}
+            <div className="p-4 pt-12 bg-gradient-to-b from-black/80 to-transparent"><div className="flex justify-between items-start"><div><div className="flex items-center space-x-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" /><span className="text-xs font-black text-green-400 uppercase tracking-widest">{isIOS ? 'LiDAR Active' : 'AI Photogrammetry'}</span></div><h2 className="text-white font-bold text-lg mt-1">Room Scan</h2></div><button onClick={onComplete} className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white pointer-events-auto active:scale-95"><X size={20} /></button></div></div>
+            {isIOS && corners.map((p) => (<div key={p.id} className="absolute w-6 h-6 -ml-3 -mt-3 flex items-center justify-center" style={{ left: p.x, top: p.y }}><div className="w-3 h-3 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-in zoom-in duration-200" /></div>))}
             <div className="p-6 pb-8 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-auto">
-              {!isIOS && (
-                <div className="mb-4">
-                  <p className="text-white/80 text-xs text-center font-bold mb-3">Capture at least 3 photos from different angles.</p>
-                  <div className="flex items-center space-x-2 h-16 bg-black/30 backdrop-blur-md rounded-xl p-2 overflow-x-auto no-scrollbar">
-                    {capturedImages.map(img => <img key={img.id} src={img.url} className="h-full rounded-md" />)}
-                  </div>
-                </div>
-              )}
-              {isIOS ? (
-                <div className="flex justify-between items-center mb-6">
-                  <div className="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2 border border-white/10">
-                    <div className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Corners</div>
-                    <div className="text-xl font-black text-white">{corners.length}</div>
-                  </div>
-                  {isIOS && (<button onClick={() => setLidarEnabled(!lidarEnabled)} className={`p-3 rounded-full border transition-all ${lidarEnabled ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-white/10 border-white/10 text-gray-400'}`}><Zap size={20} /></button>)}
-                </div>
-              ) : (
-                <div className="flex justify-center items-center mb-6">
-                  <div className="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2 border border-white/10">
-                    <div className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Photos Captured</div>
-                    <div className="text-xl font-black text-white">{capturedImages.length}</div>
-                  </div>
-                </div>
-              )}
-              <div className="flex space-x-4">
-                <button onClick={isIOS ? addCorner : captureFrame} className="flex-1 bg-gray-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 active:bg-gray-700 transition-all border border-gray-700">
-                  <Plus size={20} /><span>{isIOS ? 'Mark Corner' : 'Capture Frame'}</span>
-                </button>
-                <button onClick={processScan} disabled={isIOS ? corners.length < 3 : capturedImages.length < 3} className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 transition-all shadow-lg ${(isIOS ? corners.length >= 3 : capturedImages.length >= 3) ? 'bg-blue-600 text-white shadow-blue-900/50 active:scale-95' : 'bg-gray-800 text-gray-500 opacity-50 cursor-not-allowed'}`}>
-                  <Cuboid size={20} /><span>Process Scan</span>
-                </button>
-              </div>
+              {!isIOS && (<div className="mb-4"><p className="text-white/80 text-xs text-center font-bold mb-3">Capture at least 3 photos from different angles.</p><div className="flex items-center space-x-2 h-16 bg-black/30 backdrop-blur-md rounded-xl p-2 overflow-x-auto">{capturedImages.map(img => <img key={img.id} src={img.url} className="h-full rounded-md" />)}</div></div>)}
+              <div className="flex space-x-4"><button onClick={isIOS ? addCorner : captureFrame} className="flex-1 bg-gray-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 active:bg-gray-700 transition-all border border-gray-700"><Plus size={20} /><span>{isIOS ? 'Mark Corner' : 'Capture Frame'}</span></button><button onClick={processScan} disabled={isIOS ? corners.length < 3 : capturedImages.length < 3} className={`flex-1 py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 transition-all shadow-lg ${(isIOS ? corners.length >= 3 : capturedImages.length >= 3) ? 'bg-blue-600 text-white shadow-blue-900/50 active:scale-95' : 'bg-gray-800 text-gray-500 opacity-50 cursor-not-allowed'}`}><Cuboid size={20} /><span>Process Scan</span></button></div>
             </div>
           </div>
         </>
       )}
-      {mode === 'processing' && (
-        <div className="absolute inset-0 bg-gray-900 flex flex-col items-center justify-center z-50">
-          <div className="relative">
-            <div className="w-24 h-24 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-            <BrainCircuit size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white animate-pulse" />
-          </div>
-          <h3 className="text-white font-bold text-xl mt-8">AI Analysis in Progress</h3>
-          <p className="text-gray-400 text-sm mt-2">{processingMessage}</p>
-        </div>
-      )}
+      {mode === 'processing' && (<div className="absolute inset-0 bg-gray-900 flex flex-col items-center justify-center z-50"><div className="relative"><div className="w-24 h-24 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" /><BrainCircuit size={32} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white animate-pulse" /></div><h3 className="text-white font-bold text-xl mt-8">AI Analysis in Progress</h3><p className="text-gray-400 text-sm mt-2">{processingMessage}</p></div>)}
       {mode === 'result' && (
         <div className="absolute inset-0 bg-gray-50 z-50 flex flex-col">
           <div className="bg-white px-4 py-4 border-b border-gray-200 flex justify-between items-center shadow-sm">
-            <div className="flex items-center space-x-3">
-              <button onClick={resetScan} className="p-2 -ml-2 text-gray-400 hover:text-gray-900"><ArrowLeft size={24} /></button>
-              <div>
-                <h2 className="font-bold text-gray-900 text-lg">{aiRoomLabel} Model</h2>
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{aiDimensions ? `${aiDimensions.sqft.toFixed(1)} SQ FT • 8' CEILING` : `${calculateArea()} SQ FT • 8' CEILING`}</div>
+              <div className="flex items-center space-x-3">
+                  <button onClick={resetScan} className="p-2 -ml-2 text-gray-400 hover:text-gray-900"><ArrowLeft size={24} /></button>
+                  <div>
+                      <h2 className="font-bold text-gray-900 text-lg">{aiRoomLabel} Model</h2>
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{aiDimensions ? `${aiDimensions.sqft.toFixed(1)} SQ FT • 8' CEILING` : `${calculateArea()} SQ FT • 8' CEILING`}</div>
+                  </div>
               </div>
-            </div>
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              <button onClick={() => setResultView('2d')} className={`p-2 rounded-md transition-all ${resultView === '2d' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}><Layers size={18} /></button>
-              <button onClick={() => setResultView('3d')} className={`p-2 rounded-md transition-all ${resultView === '3d' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}><Orbit size={18} /></button>
-            </div>
+              <div className="flex space-x-2">
+                 {resultView === '3d' && (
+                     <div className="flex bg-gray-100 rounded-lg p-1">
+                        <button onClick={() => setRenderMode('solid')} className={`p-2 rounded-md transition-all ${renderMode === 'solid' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`} title="Solid"><Box size={18} /></button>
+                        <button onClick={() => setRenderMode('wireframe')} className={`p-2 rounded-md transition-all ${renderMode === 'wireframe' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`} title="Wireframe"><Grid3X3 size={18} /></button>
+                     </div>
+                 )}
+                 <div className="flex bg-gray-100 rounded-lg p-1">
+                    <button onClick={() => setResultView('2d')} className={`p-2 rounded-md transition-all ${resultView === '2d' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`} title="2D Map"><Layers size={18} /></button>
+                    <button onClick={() => setResultView('3d')} className={`p-2 rounded-md transition-all ${resultView === '3d' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`} title="3D View"><Orbit size={18} /></button>
+                 </div>
+              </div>
           </div>
           <div className="flex-1 relative bg-gray-100 overflow-hidden flex items-center justify-center p-8">
-            <div className="absolute top-4 left-4 right-4 bg-white p-4 rounded-2xl border border-gray-200 flex items-start space-x-3 shadow-lg z-20">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><BrainCircuit size={20} /></div>
-              <div>
-                <h4 className="text-xs font-bold text-gray-800">AI Damage Assessment</h4>
-                <p className="text-xs text-gray-500">{aiDamageAssessment}</p>
+              <div className="absolute top-4 left-4 right-4 bg-white p-4 rounded-2xl border border-gray-200 flex items-start space-x-3 shadow-lg z-20">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><BrainCircuit size={20} /></div>
+                  <div><h4 className="text-xs font-bold text-gray-800">AI Damage Assessment</h4><p className="text-xs text-gray-500">{aiDamageAssessment}</p></div>
               </div>
-            </div>
-            <div className="relative w-full aspect-square max-w-md bg-white rounded-xl shadow-xl border border-gray-200 p-8 transform transition-all duration-500">
+              <div className="relative w-full aspect-square max-w-md bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
               {resultView === '2d' ? (
-                <>
-                  {isIOS ? (
+                 <div className="w-full h-full relative">
+                    {/* Blueprint Grid Background */}
+                    <div className="absolute inset-0 opacity-20 pointer-events-none" 
+                        style={{
+                            backgroundImage: 'linear-gradient(#3b82f6 1px, transparent 1px), linear-gradient(90deg, #3b82f6 1px, transparent 1px)',
+                            backgroundSize: '20px 20px'
+                        }} 
+                    />
                     <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-                      <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#f0f0f0" strokeWidth="0.5"/></pattern></defs>
-                      <rect width="100" height="100" fill="url(#grid)" />
-                      {processedFloorPlan ? (
-                        <>
-                          <polygon points={processedFloorPlan.pointsString} fill="#3b82f6" fillOpacity="0.1" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round"/>
-                          {processedFloorPlan.scaledCorners.map((p, i) => (
-                            <circle key={i} cx={p.x} cy={p.y} r="1.5" fill="white" stroke="#2563eb" strokeWidth="0.5" />
-                          ))}
-                        </>
-                      ) : (
-                        <text x="50" y="50" textAnchor="middle" fontSize="4" fill="#9ca3af">Not enough points.</text>
-                      )}
+                        <defs>
+                            <pattern id="smallGrid" width="2" height="2" patternUnits="userSpaceOnUse">
+                                <path d="M 2 0 L 0 0 0 2" fill="none" stroke="#3b82f6" strokeWidth="0.1" opacity="0.2"/>
+                            </pattern>
+                        </defs>
+                        <rect width="100" height="100" fill="url(#smallGrid)" />
+                        
+                        {isIOS && processedFloorPlan ? (
+                            <>
+                                <polygon points={processedFloorPlan.pointsString} fill="#3b82f6" fillOpacity="0.15" stroke="#2563eb" strokeWidth="1" strokeLinejoin="round"/>
+                                {processedFloorPlan.scaledCorners.map((p, i) => (<circle key={i} cx={p.x} cy={p.y} r="1.5" fill="white" stroke="#2563eb" strokeWidth="0.5" />))}
+                                {/* Add dimension lines logic here if needed */}
+                            </>
+                        ) : aiGeneratedSvg ? (
+                             // Inject stylings into AI SVG if it's plain
+                             <g dangerouslySetInnerHTML={{ __html: aiGeneratedSvg.replace('<svg', '<g').replace('</svg>', '</g>') }} />
+                        ) : (
+                             <text x="50" y="50" textAnchor="middle" fontSize="4" fill="#9ca3af">Not enough points.</text>
+                        )}
                     </svg>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center" dangerouslySetInnerHTML={{ __html: aiGeneratedSvg }} />
-                  )}
-                </>
-              ) : (
+                 </div>
+               ) : (
                 (() => {
-                  const baseSize = 12; const wallHeightRem = 6;
+                  const baseSize = 12; 
+                  const wallHeightRem = 6;
                   const widthRem = threeDAspectRatio >= 1 ? baseSize : baseSize * threeDAspectRatio;
                   const heightRem = threeDAspectRatio < 1 ? baseSize : baseSize / threeDAspectRatio;
                   const lengthFt = isIOS ? iosDimensions?.length : (aiDimensions?.length || 0).toFixed(1);
                   const widthFt = isIOS ? iosDimensions?.width : (aiDimensions?.width || 0).toFixed(1);
 
+                  const isWireframe = renderMode === 'wireframe';
+                  const wallStyle = isWireframe 
+                    ? { background: 'transparent', border: '1px solid #60a5fa' } 
+                    : { background: 'linear-gradient(to top, #dbeafe, #eff6ff)', border: '1px solid #bfdbfe' };
+                    
+                  const floorStyle = isWireframe
+                    ? { background: 'transparent', border: '1px solid #60a5fa' }
+                    : { background: '#f8fafc', borderTop: '2px solid #bfdbfe' };
+
                   return (
-                    <div className="w-full h-full flex items-center justify-center perspective-[1000px] cursor-grab active:cursor-grabbing" onMouseDown={handleInteractionStart} onMouseMove={handleInteractionMove} onMouseUp={handleInteractionEnd} onMouseLeave={handleInteractionEnd} onTouchStart={handleInteractionStart} onTouchMove={handleInteractionMove} onTouchEnd={handleInteractionEnd} onWheel={handleWheel}>
+                    <div className="w-full h-full flex items-center justify-center perspective-[1000px] cursor-grab active:cursor-grabbing bg-slate-50" onMouseDown={handleInteractionStart} onMouseMove={handleInteractionMove} onMouseUp={handleInteractionEnd} onMouseLeave={handleInteractionEnd} onTouchStart={handleInteractionStart} onTouchMove={handleInteractionMove} onTouchEnd={handleInteractionEnd} onWheel={handleWheel}>
                       <div className={`relative ${!isInteracting.current ? 'transition-transform duration-700' : ''}`} style={{ transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg) scale(${zoom})`, transformStyle: 'preserve-3d', width: `${widthRem}rem`, height: `${heightRem}rem` }}>
-                        <div className="absolute bottom-0 w-full h-full bg-blue-500/10 border-t-2 border-blue-300" style={{ transform: `translateZ(-${wallHeightRem / 2}rem) rotateX(90deg)` }} />
-                        <div className="absolute top-0 w-full h-full bg-blue-500/5" style={{ transform: `translateZ(${wallHeightRem / 2}rem) rotateX(90deg)` }} />
-                        <div className="absolute w-full h-full" style={{ transform: `translateZ(-${wallHeightRem / 2}rem)` }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-blue-200/50 to-transparent border-b-2 border-blue-200" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${heightRem / 2}rem)` }} />
-                          <div className="absolute inset-0 bg-gradient-to-t from-blue-200/50 to-transparent border-b-2 border-blue-200" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${heightRem / 2}rem)` }} />
-                          <div className="absolute inset-0 bg-gradient-to-t from-blue-200/50 to-transparent border-b-2 border-blue-200" style={{ height: `${wallHeightRem}rem`, width: `${heightRem}rem`, left: `-${(heightRem - widthRem)/2}rem`, transform: `rotateY(90deg) translateZ(${widthRem/2}rem)` }} />
-                          <div className="absolute inset-0 bg-gradient-to-t from-blue-200/50 to-transparent border-b-2 border-blue-200" style={{ height: `${wallHeightRem}rem`, width: `${heightRem}rem`, left: `-${(heightRem - widthRem)/2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem/2}rem)` }} />
+                        
+                        {/* Floor */}
+                        <div className="absolute w-full h-full" style={{ transform: `translateZ(-${wallHeightRem / 2}rem)`, ...floorStyle }}>
+                            {/* Grid on floor for scale reference */}
+                            {!isWireframe && <div className="absolute inset-0 opacity-20" style={{backgroundImage: 'radial-gradient(#3b82f6 1px, transparent 1px)', backgroundSize: '10px 10px'}} />}
                         </div>
-                        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-center text-xs text-gray-500 font-bold">{widthFt} ft</div>
-                        <div className="absolute -left-6 top-1/2 -translate-y-1/2 text-center text-xs text-gray-500 font-bold" style={{transform: 'rotate(-90deg)'}}>{lengthFt} ft</div>
-                        <div className="absolute w-full h-full border border-blue-400/30" style={{ transform: `translateZ(-${wallHeightRem/2}rem)` }} />
-                        <div className="absolute w-full h-full border border-blue-400/30" style={{ transform: `translateZ(${wallHeightRem/2}rem)` }} />
+                        
+                        {/* Walls Container */}
+                        <div className="absolute w-full h-full" style={{ transform: `translateZ(-${wallHeightRem / 2}rem)`, transformStyle: 'preserve-3d' }}>
+                          {/* Front Wall (Visual Back) */}
+                          <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${heightRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                          {/* Back Wall (Visual Front - usually hidden or transparent in cutaway) */}
+                          <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${heightRem / 2}rem) rotateX(-90deg)`, ...wallStyle, opacity: isWireframe ? 1 : 0.2 }} />
+                          {/* Left Wall */}
+                          <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${heightRem}rem`, left: `-${(heightRem - widthRem)/2}rem`, transform: `rotateY(90deg) translateZ(${widthRem/2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                          {/* Right Wall */}
+                          <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${heightRem}rem`, left: `-${(heightRem - widthRem)/2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem/2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                        </div>
+
+                        {/* Ceiling (Wireframe only usually) */}
+                        {isWireframe && <div className="absolute w-full h-full" style={{ transform: `translateZ(${wallHeightRem / 2}rem)`, border: '1px solid #60a5fa' }} />}
+
+                        {/* Labels */}
+                        {!isWireframe && (
+                            <>
+                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-center text-[10px] text-slate-500 font-bold bg-white/80 px-2 py-1 rounded shadow-sm backdrop-blur-sm">{widthFt} ft Width</div>
+                                <div className="absolute -left-8 top-1/2 -translate-y-1/2 text-center text-[10px] text-slate-500 font-bold bg-white/80 px-2 py-1 rounded shadow-sm backdrop-blur-sm" style={{transform: 'rotate(-90deg)'}}>{lengthFt} ft Length</div>
+                                <div className="absolute -right-8 top-1/2 -translate-y-1/2 text-center text-[10px] text-slate-500 font-bold bg-white/80 px-2 py-1 rounded shadow-sm backdrop-blur-sm" style={{transform: 'rotate(90deg)'}}>8.0 ft Height</div>
+                            </>
+                        )}
                       </div>
                     </div>
                   );

@@ -1,8 +1,7 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { addScanToProject as mockAddScanToProject, RoomScan } from '../data/mockApi';
-
-export type Tab = 'dashboard' | 'scanner' | 'logs' | 'equipment' | 'photos' | 'project' | 'analysis' | 'reference' | 'forms' | 'new-project' | 'billing';
+import { addScanToProject as mockAddScanToProject } from '../data/mockApi';
+import { RoomScan, Tab } from '../types';
 
 interface AppContextType {
   activeTab: Tab;
@@ -12,6 +11,7 @@ interface AppContextType {
   isAuthenticated: boolean | null;
   setAuthentication: (status: boolean) => void;
   addScanToProject: (projectId: string, scan: RoomScan) => Promise<void>;
+  isOnline: boolean;
 }
 
 export const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -20,13 +20,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 
   useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     const timer = setTimeout(() => {
+      // Simulate auth check
       setIsAuthenticated(false);
     }, 1500); 
 
-    return () => clearTimeout(timer);
+    return () => {
+        clearTimeout(timer);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
   }, []);
   
   const setAuthentication = (status: boolean) => {
@@ -45,6 +57,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isAuthenticated,
     setAuthentication,
     addScanToProject,
+    isOnline,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

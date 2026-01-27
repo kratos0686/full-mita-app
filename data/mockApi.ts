@@ -1,82 +1,18 @@
 
-export interface Milestone {
-  title: string;
-  date: string;
-  status: 'completed' | 'active' | 'pending';
-}
+import { 
+  Project, 
+  Milestone, 
+  AITask, 
+  LineItem, 
+  RoomScan, 
+  ComplianceCheck, 
+  WaterCategory, 
+  LossClass,
+  TicSheetItem
+} from '../types';
 
-export interface AITask {
-    id: string;
-    text: string;
-    isCompleted: boolean;
-}
-
-export interface LineItem {
-    id:string;
-    description: string;
-    quantity: number;
-    rate: number;
-    total: number;
-}
-
-export interface PlacedPhoto {
-  photoId: string;
-  url: string;
-  x: number; // as a percentage of the floor plan width
-  y: number; // as a percentage of the floor plan height
-}
-
-export interface RoomScan {
-  scanId: string;
-  roomName: string;
-  floorPlanSvg: string;
-  dimensions: { length: number; width: number; sqft: number };
-  placedPhotos: PlacedPhoto[];
-}
-
-export interface ComplianceCheck {
-    id: string;
-    text: string;
-    isCompleted: boolean;
-}
-
-export interface Project {
-  id: string;
-  client: string;
-  clientEmail: string;
-  clientPhone: string;
-  address: string;
-  status: string;
-  progress: number;
-  rooms: number;
-  estimate: string;
-  logs: string;
-  insurance: string;
-  policyNumber: string;
-  adjuster: string;
-  startDate: string;
-  milestones: Milestone[];
-  tasks: AITask[];
-  lineItems: LineItem[];
-  totalCost: number;
-  invoiceStatus: 'Draft' | 'Sent' | 'Paid';
-  roomScans: RoomScan[];
-  complianceChecks: {
-      asbestos: 'not_tested' | 'pending' | 'clear' | 'abatement_required';
-      aiChecklist: ComplianceCheck[];
-  }
-}
-
-export interface AIProjectData extends Project {
-  aiSummary: string;
-  aiAlert: {
-    isAlert: boolean;
-    reason: string;
-  };
-  priority: number;
-}
-
-const projects: Project[] = [
+// --- Seed Data (Initial State) ---
+const seedProjects: Project[] = [
   { 
     id: 'P-1001', 
     client: 'Sarah Johnson', 
@@ -85,13 +21,29 @@ const projects: Project[] = [
     address: '124 Maple Ave', 
     status: 'Drying - Day 2', 
     progress: 65, 
-    rooms: 3, 
     estimate: 'Oct 16', 
     logs: "GPP trending down steadily.",
     insurance: "State Farm",
     policyNumber: 'SF-987654321',
     adjuster: 'Tom Brown',
     startDate: "Oct 12, 2023",
+    summary: 'Class 3 Water Loss. Overhead pipe burst affecting kitchen and living room.',
+    riskLevel: 'high',
+    waterCategory: WaterCategory.CAT_3,
+    lossClass: LossClass.CLASS_3,
+    budget: 15000,
+    assignedTeam: ['Mike R.', 'Jessica P.'],
+    rooms: [
+      {
+        id: 'r1', name: 'Living Room', status: 'drying',
+        dimensions: { length: 15.2, width: 20.1, height: 8 },
+        photos: [{ id: 'p1', url: 'https://picsum.photos/seed/mit1/800/600', timestamp: Date.now(), tags: ['drywall', 'flooring'], notes: 'Initial saturation' }],
+        readings: [
+          { timestamp: Date.now() - 86400000, temp: 72, rh: 85, gpp: 98, mc: 45 },
+          { timestamp: Date.now(), temp: 78, rh: 45, gpp: 62, mc: 28 },
+        ]
+      }
+    ],
     milestones: [
         { title: 'First Contact', date: 'Oct 12, 08:15 AM', status: 'completed' },
         { title: 'Initial Assessment', date: 'Oct 12, 09:30 AM', status: 'completed' },
@@ -117,10 +69,14 @@ const projects: Project[] = [
         floorPlanSvg: '<svg viewBox="0 0 100 100"><polygon points="10,10 90,10 90,90 10,90" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="0.5" stroke-linejoin="round"></polygon></svg>',
         dimensions: { length: 15.2, width: 20.1, sqft: 305.5 },
         placedPhotos: [
-          { photoId: '1', url: 'https://picsum.photos/seed/mit1/400/400', x: 20, y: 50 },
-          { photoId: '2', url: 'https://picsum.photos/seed/mit2/400/400', x: 80, y: 50 },
+          { id: '1', url: 'https://picsum.photos/seed/mit1/400/400', x: 20, y: 50, timestamp: Date.now(), tags: [], notes: '' },
+          { id: '2', url: 'https://picsum.photos/seed/mit2/400/400', x: 80, y: 50, timestamp: Date.now(), tags: [], notes: '' },
         ],
       }
+    ],
+    ticSheet: [
+      { id: 'ts1', category: 'Water Extraction', description: 'Weighted extraction, carpet', uom: 'SQFT', quantity: 305, included: true, source: 'manual' },
+      { id: 'ts2', category: 'Demolition', description: 'Remove wet drywall - up to 2 ft', uom: 'LF', quantity: 70, included: true, source: 'manual' }
     ],
     complianceChecks: {
       asbestos: 'pending',
@@ -138,13 +94,19 @@ const projects: Project[] = [
     address: '890 Oak Lane', 
     status: 'Initial Assessment', 
     progress: 15, 
-    rooms: 5, 
     estimate: 'Oct 19', 
     logs: "High humidity spike recorded at 2:00 AM. Needs investigation.",
     insurance: "Allstate",
     policyNumber: 'ALL-112233445',
     adjuster: 'Jane Doe',
     startDate: "Oct 14, 2023",
+    summary: 'Basement sump pump failure. 2 inches of standing water.',
+    riskLevel: 'medium',
+    waterCategory: WaterCategory.CAT_2,
+    lossClass: LossClass.CLASS_2,
+    budget: 7500,
+    assignedTeam: ['David F.'],
+    rooms: [],
     milestones: [
         { title: 'First Contact', date: 'Oct 14, 11:00 AM', status: 'completed' },
         { title: 'Initial Assessment', date: 'In Progress', status: 'active' },
@@ -160,71 +122,67 @@ const projects: Project[] = [
     totalCost: 0,
     invoiceStatus: 'Draft',
     roomScans: [],
+    ticSheet: [],
     complianceChecks: {
       asbestos: 'not_tested',
       aiChecklist: []
     }
   },
-  { 
-    id: 'P-1003', 
-    client: 'Elena Rodriguez', 
-    clientEmail: 'e.rodriguez@example.com',
-    clientPhone: '555-456-7890',
-    address: '55 Pine St', 
-    status: 'Completed', 
-    progress: 100, 
-    rooms: 2, 
-    estimate: 'Oct 17', 
-    logs: "Atmospheric conditions are stable, no anomalies.",
-    insurance: "Progressive",
-    policyNumber: 'PROG-55667788',
-    adjuster: 'Sam Wilson',
-    startDate: "Oct 13, 2023",
-    milestones: [
-        { title: 'First Contact', date: 'Oct 13, 02:45 PM', status: 'completed' },
-        { title: 'Initial Assessment', date: 'Oct 13, 04:00 PM', status: 'completed' },
-        { title: 'Extraction & Setup', date: 'Oct 13, 06:00 PM', status: 'completed' },
-        { title: 'Drying Complete', date: 'Oct 16, 09:00 AM', status: 'active' },
-    ],
-    tasks: [
-        { id: 't7', text: 'Break down and remove all equipment.', isCompleted: false },
-        { id: 't8', text: 'Obtain signature on Completion Form.', isCompleted: false },
-    ],
-    lineItems: [
-        { id: 'li3', description: 'Standard Mitigation Labor', quantity: 24, rate: 75, total: 1800 },
-    ],
-    totalCost: 1800,
-    invoiceStatus: 'Paid',
-    roomScans: [],
-    complianceChecks: {
-      asbestos: 'clear',
-      aiChecklist: [
-        { id: 'c3', text: 'All materials passed dry standard.', isCompleted: true },
-      ]
-    }
-  },
 ];
 
-// Simulate API delay
+// --- Offline Storage Logic ---
+const STORAGE_KEY = 'mitigation_ai_projects';
+
+const loadProjectsFromStorage = (): Project[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Failed to load projects from storage", e);
+  }
+  // Initialize with seed data if empty
+  saveProjectsToStorage(seedProjects);
+  return seedProjects;
+};
+
+const saveProjectsToStorage = (projects: Project[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  } catch (e) {
+    console.error("Failed to save projects to storage", e);
+  }
+};
+
+// Simulate API delay for realism, but data is local
 const apiDelay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getProjects = async (): Promise<Project[]> => {
-  await apiDelay(500);
-  return projects;
+  await apiDelay(300);
+  return loadProjectsFromStorage();
 };
 
 export const getProjectById = async (id: string): Promise<Project | null> => {
-  await apiDelay(300);
+  await apiDelay(200);
+  const projects = loadProjectsFromStorage();
   return projects.find(p => p.id === id) || null;
 };
 
-export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 'milestones' | 'tasks' | 'lineItems' | 'totalCost' | 'invoiceStatus' | 'roomScans' | 'complianceChecks'>): Promise<Project> => {
-  await apiDelay(200);
-  const newId = `P-${Math.floor(Math.random() * 900) + 1000}`;
+export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 'milestones' | 'tasks' | 'lineItems' | 'totalCost' | 'invoiceStatus' | 'roomScans' | 'complianceChecks' | 'summary' | 'riskLevel' | 'rooms' | 'ticSheet'>): Promise<Project> => {
+  await apiDelay(400);
+  const projects = loadProjectsFromStorage();
+  
+  const newId = `P-${Math.floor(Math.random() * 9000) + 1000}`;
   const newProject: Project = {
     ...projectData,
     id: newId,
     progress: 5,
+    summary: 'Newly created project file.',
+    riskLevel: 'low',
+    rooms: [],
+    budget: 5000,
+    assignedTeam: ['Unassigned'],
     milestones: [
       { title: 'Project Created', date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), status: 'active' },
       { title: 'Initial Assessment', date: 'TBD', status: 'pending' },
@@ -237,30 +195,40 @@ export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 
     totalCost: 0,
     invoiceStatus: 'Draft',
     roomScans: [],
+    ticSheet: [],
     complianceChecks: {
       asbestos: 'not_tested',
       aiChecklist: []
     }
   };
-  projects.unshift(newProject);
+  
+  const updatedProjects = [newProject, ...projects];
+  saveProjectsToStorage(updatedProjects);
   return newProject;
 };
 
 export const addScanToProject = async (projectId: string, scan: RoomScan): Promise<Project | null> => {
-  await apiDelay(200);
+  await apiDelay(300);
+  const projects = loadProjectsFromStorage();
   const projectIndex = projects.findIndex(p => p.id === projectId);
+  
   if (projectIndex === -1) return null;
+  
   projects[projectIndex].roomScans.push(scan);
+  saveProjectsToStorage(projects);
   return projects[projectIndex];
 };
 
 export const updateComplianceChecklist = async (projectId: string, newCheck: ComplianceCheck): Promise<Project | null> => {
-    await apiDelay(100);
+    await apiDelay(200);
+    const projects = loadProjectsFromStorage();
     const projectIndex = projects.findIndex(p => p.id === projectId);
+    
     if (projectIndex === -1) return null;
-    const project = projects[projectIndex];
-    if (!project.complianceChecks.aiChecklist.some(c => c.text === newCheck.text)) {
-      project.complianceChecks.aiChecklist.push(newCheck);
+    
+    if (!projects[projectIndex].complianceChecks.aiChecklist.some(c => c.text === newCheck.text)) {
+      projects[projectIndex].complianceChecks.aiChecklist.push(newCheck);
+      saveProjectsToStorage(projects);
     }
-    return project;
+    return projects[projectIndex];
 }

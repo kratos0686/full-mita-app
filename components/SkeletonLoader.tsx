@@ -23,7 +23,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {skeletons.map((_, index) => (
         <div
           key={index}
-          className="bg-gray-200 animate-pulse"
+          className="bg-slate-800/80 animate-pulse"
           style={{ height, width, borderRadius }}
         />
       ))}

@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, X, Cpu, Calculator } from 'lucide-react';
 import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
-import { useAppContext, Tab } from '../context/AppContext';
+import { useAppContext } from '../context/AppContext';
+import { Tab } from '../types';
 
 interface CommandCenterProps {
   isOpen: boolean;
