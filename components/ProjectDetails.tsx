@@ -1,28 +1,28 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, MapPin, Calendar, ShieldCheck, AlertCircle, Clock,
   BrainCircuit, Printer, Loader2, Scan, Droplets, ClipboardList, Download, Cuboid, Eye,
-  User, Mail, Phone, UserSquare, FileText, ListChecks
+  User, Mail, Phone, UserSquare, FileText, ListChecks, Video, Upload, PlayCircle
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useAppContext } from '../context/AppContext';
 import { getProjectById } from '../data/mockApi';
-import { Project, AITask, RoomScan } from '../types';
+import { Project, AITask, RoomScan, VideoLog } from '../types';
 import SkeletonLoader from './SkeletonLoader';
 import WalkthroughViewer from './WalkthroughViewer';
 import ComplianceChecklist from './ComplianceChecklist';
 
 const StatusBadge = ({ status }: { status: string }) => {
-  let colorClasses = 'bg-slate-700 text-slate-300';
-  let dotClasses = 'bg-slate-400';
+  let colorClasses = 'bg-slate-700 text-blue-500';
+  let dotClasses = 'bg-slate-500';
   const lowerStatus = status.toLowerCase();
-  if (lowerStatus.includes('drying')) { colorClasses = 'bg-blue-500/20 text-blue-300'; dotClasses = 'bg-blue-400 animate-pulse'; }
-  else if (lowerStatus.includes('assessment')) { colorClasses = 'bg-indigo-500/20 text-indigo-300'; dotClasses = 'bg-indigo-400 animate-pulse'; }
-  else if (lowerStatus.includes('completed')) { colorClasses = 'bg-green-500/20 text-green-300'; dotClasses = 'bg-green-400'; }
-  else if (lowerStatus.includes('paid')) { colorClasses = 'bg-emerald-500/20 text-emerald-300'; dotClasses = 'bg-emerald-400'; }
+  if (lowerStatus.includes('drying')) { colorClasses = 'bg-blue-500/20 text-blue-500'; dotClasses = 'bg-blue-600 animate-pulse'; }
+  else if (lowerStatus.includes('assessment')) { colorClasses = 'bg-indigo-500/20 text-indigo-500'; dotClasses = 'bg-indigo-600 animate-pulse'; }
+  else if (lowerStatus.includes('completed')) { colorClasses = 'bg-green-500/20 text-green-500'; dotClasses = 'bg-green-600'; }
+  else if (lowerStatus.includes('paid')) { colorClasses = 'bg-emerald-500/20 text-emerald-500'; dotClasses = 'bg-emerald-600'; }
   return (<div className={`inline-flex items-center px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest ${colorClasses}`}><div className={`w-2 h-2 rounded-full mr-2.5 ${dotClasses}`} /><span>{status}</span></div>);
 };
 
@@ -32,16 +32,16 @@ const ProjectSidebar: React.FC<{ project: Project }> = ({ project }) => (
             <h4 className="font-black text-white tracking-tight mb-4">Client Contact</h4>
             <div className="space-y-4">
                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><User size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Client</p><p className="text-sm font-bold text-white">{project.client}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><User size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Client</p><p className="text-sm font-bold text-white">{project.client}</p></div>
                 </div>
                  <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><Mail size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Email</p><p className="text-sm font-bold text-white">{project.clientEmail}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><Mail size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Email</p><p className="text-sm font-bold text-white">{project.clientEmail}</p></div>
                 </div>
                  <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><Phone size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Phone</p><p className="text-sm font-bold text-white">{project.clientPhone}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><Phone size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Phone</p><p className="text-sm font-bold text-white">{project.clientPhone}</p></div>
                 </div>
             </div>
             </div>
@@ -50,16 +50,16 @@ const ProjectSidebar: React.FC<{ project: Project }> = ({ project }) => (
             <h4 className="font-black text-white tracking-tight mb-4">Insurance Details</h4>
             <div className="space-y-4">
                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><ShieldCheck size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Carrier</p><p className="text-sm font-bold text-white">{project.insurance}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><ShieldCheck size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Carrier</p><p className="text-sm font-bold text-white">{project.insurance}</p></div>
                 </div>
                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><FileText size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Policy #</p><p className="text-sm font-bold text-white">{project.policyNumber}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><FileText size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Policy #</p><p className="text-sm font-bold text-white">{project.policyNumber}</p></div>
                 </div>
                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-slate-400"><UserSquare size={20} /></div>
-                    <div><p className="text-xs font-bold text-slate-400 uppercase">Adjuster</p><p className="text-sm font-bold text-white">{project.adjuster}</p></div>
+                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><UserSquare size={20} /></div>
+                    <div><p className="text-xs font-bold text-blue-600 uppercase">Adjuster</p><p className="text-sm font-bold text-white">{project.adjuster}</p></div>
                 </div>
             </div>
             </div>
@@ -74,8 +74,11 @@ const ProjectDetails: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
-  
   const [viewingScan, setViewingScan] = useState<RoomScan | null>(null);
+  
+  // Video Upload State
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -143,6 +146,33 @@ const ProjectDetails: React.FC = () => {
   const handleExportXactimate = () => {
     alert("Simulating export of project data to Xactimate (.esx file)...");
   };
+
+  const handleVideoUploadClick = () => {
+    videoInputRef.current?.click();
+  };
+
+  const handleVideoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0] && project) {
+      const file = event.target.files[0];
+      setIsUploadingVideo(true);
+      
+      // Simulate upload delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      const newVideo: VideoLog = {
+        id: `vid-${Date.now()}`,
+        url: URL.createObjectURL(file), // In real app, this would be cloud URL
+        timestamp: Date.now(),
+        description: `Uploaded Video - ${file.name}`
+      };
+
+      setProject({
+        ...project,
+        videos: [newVideo, ...(project.videos || [])]
+      });
+      setIsUploadingVideo(false);
+    }
+  };
   
   if (isLoading) {
     return (
@@ -154,7 +184,7 @@ const ProjectDetails: React.FC = () => {
   }
 
   if (!project) {
-    return <div className="p-8 text-center text-slate-400">Project not found. Please select one from the dashboard.</div>;
+    return <div className="p-8 text-center text-blue-600">Project not found. Please select one from the dashboard.</div>;
   }
   
   if (viewingScan) {
@@ -163,11 +193,11 @@ const ProjectDetails: React.FC = () => {
 
   return (
     <div className="p-4 md:p-8">
-        <div id="pdf-content" className="space-y-6 md:bg-slate-900 text-slate-200 p-1">
+        <div id="pdf-content" className="space-y-6 md:bg-slate-900 text-blue-400 p-1">
             <header className="glass-card md:p-6 p-4 rounded-[2rem] md:rounded-[2.5rem]">
                 <div className="flex justify-between items-start">
                   <div>
-                      <p className="text-sm font-bold text-slate-400">{project.id}</p>
+                      <p className="text-sm font-bold text-blue-600">{project.id}</p>
                       <h2 className="text-2xl font-bold text-white tracking-tight">{project.client}</h2>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -179,10 +209,10 @@ const ProjectDetails: React.FC = () => {
                   </div>
                 </div>
                 <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div className="flex items-center space-x-2"><MapPin size={14} className="text-slate-400" /><span className="font-medium text-slate-300">{project.address}</span></div>
-                <div className="flex items-center space-x-2"><Calendar size={14} className="text-slate-400" /><span className="font-medium text-slate-300">{project.startDate}</span></div>
-                <div className="flex items-center space-x-2"><ShieldCheck size={14} className="text-slate-400" /><span className="font-medium text-slate-300">{project.insurance}</span></div>
-                <div className="flex items-center space-x-2"><Clock size={14} className="text-slate-400" /><span className="font-medium text-slate-300">{project.progress}% Complete</span></div>
+                <div className="flex items-center space-x-2"><MapPin size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.address}</span></div>
+                <div className="flex items-center space-x-2"><Calendar size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.startDate}</span></div>
+                <div className="flex items-center space-x-2"><ShieldCheck size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.insurance}</span></div>
+                <div className="flex items-center space-x-2"><Clock size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.progress}% Complete</span></div>
                 </div>
                 <div className="w-full bg-white/10 rounded-full h-2 mt-6 overflow-hidden"><div className="bg-brand-cyan h-2 rounded-full" style={{ width: `${project.progress}%` }} /></div>
             </header>
@@ -194,7 +224,7 @@ const ProjectDetails: React.FC = () => {
                             <div className="p-3 bg-brand-indigo/20 text-brand-indigo rounded-2xl border border-brand-indigo/30"><ListChecks size={24} /></div>
                             <div>
                                 <h3 className="font-black text-white tracking-tight">Scope & Tic Sheet</h3>
-                                <p className="text-xs text-slate-400 mt-0.5">Define work authorization and materials.</p>
+                                <p className="text-xs text-blue-600 mt-0.5">Define work authorization and materials.</p>
                             </div>
                         </button>
                     </div>
@@ -205,19 +235,52 @@ const ProjectDetails: React.FC = () => {
                     <section className="glass-card p-4 md:p-6 rounded-[2rem] md:rounded-[2.5rem]">
                         <div className="flex items-center space-x-3 mb-4">
                         <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20"><Cuboid size={24} /></div>
-                        <div><h3 className="font-black text-white tracking-tight">3D Environment Scans</h3><p className="text-xs text-slate-400 mt-0.5">Interactive site walkthroughs.</p></div>
+                        <div><h3 className="font-black text-white tracking-tight">3D Environment Scans</h3><p className="text-xs text-blue-600 mt-0.5">Interactive site walkthroughs.</p></div>
                         </div>
                         {project.roomScans.length > 0 ? (
                         <div className="space-y-3">
                             {project.roomScans.map(scan => (
                             <div key={scan.scanId} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex justify-between items-center">
-                                <div><h4 className="font-bold text-sm text-slate-200">{scan.roomName}</h4><p className="text-[10px] text-slate-400 font-medium">{scan.dimensions.sqft.toFixed(1)} sq ft</p></div>
+                                <div><h4 className="font-bold text-sm text-blue-400">{scan.roomName}</h4><p className="text-[10px] text-blue-600 font-medium">{scan.dimensions.sqft.toFixed(1)} sq ft</p></div>
                                 <button onClick={() => setViewingScan(scan)} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 hover:bg-emerald-600 transition-colors"><Eye size={14} /><span>Launch</span></button>
                             </div>
                             ))}
                         </div>
                         ) : (
-                        <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10"><p className="text-sm font-bold text-slate-300">No 3D Scans Available</p><p className="text-xs text-slate-500 mt-1">Perform a scan to create a walkthrough.</p></div>
+                        <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10"><p className="text-sm font-bold text-blue-500">No 3D Scans Available</p><p className="text-xs text-blue-700 mt-1">Perform a scan to create a walkthrough.</p></div>
+                        )}
+                    </section>
+
+                    <section className="glass-card p-4 md:p-6 rounded-[2rem] md:rounded-[2.5rem]">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl border border-indigo-500/20"><Video size={24} /></div>
+                                <div><h3 className="font-black text-white tracking-tight">Project Video Logs</h3><p className="text-xs text-blue-600 mt-0.5">Visual documentation timeline.</p></div>
+                            </div>
+                            <input type="file" ref={videoInputRef} onChange={handleVideoFileChange} className="hidden" accept="video/*" />
+                            <button onClick={handleVideoUploadClick} disabled={isUploadingVideo} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 hover:bg-indigo-700 transition-colors shadow-lg active:scale-95 disabled:opacity-50">
+                                {isUploadingVideo ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                <span>{isUploadingVideo ? 'Uploading...' : 'Upload Video'}</span>
+                            </button>
+                        </div>
+                        
+                        {(project.videos && project.videos.length > 0) ? (
+                            <div className="grid grid-cols-1 gap-3">
+                                {project.videos.map(video => (
+                                    <div key={video.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 flex items-center space-x-4">
+                                        <div className="w-12 h-12 bg-black/40 rounded-xl flex items-center justify-center shrink-0 text-white/50"><PlayCircle size={24} /></div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-sm text-blue-400 truncate">{video.description}</h4>
+                                            <p className="text-[10px] text-blue-600 font-medium">{new Date(video.timestamp).toLocaleDateString()} • {new Date(video.timestamp).toLocaleTimeString()}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10">
+                                <p className="text-sm font-bold text-blue-500">No Videos Uploaded</p>
+                                <p className="text-xs text-blue-700 mt-1">Capture site conditions using video.</p>
+                            </div>
                         )}
                     </section>
                 </div>
@@ -229,10 +292,10 @@ const ProjectDetails: React.FC = () => {
                         <div className="space-y-4">
                             {project.milestones.map((m, i) => (
                             <div key={i} className="flex items-start space-x-3">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${m.status === 'completed' ? 'bg-green-500/20 text-green-400' : m.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-700 text-slate-400'}`}>
-                                {m.status === 'completed' ? <CheckCircle2 size={14} /> : m.status === 'active' ? <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" /> : <div className="w-2 h-2 bg-slate-400 rounded-full" />}
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${m.status === 'completed' ? 'bg-green-500/20 text-green-400' : m.status === 'active' ? 'bg-blue-500/20 text-blue-600' : 'bg-slate-700 text-blue-600'}`}>
+                                {m.status === 'completed' ? <CheckCircle2 size={14} /> : m.status === 'active' ? <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> : <div className="w-2 h-2 bg-blue-600 rounded-full" />}
                                 </div>
-                                <div><p className="font-bold text-sm text-slate-200">{m.title}</p><p className="text-xs text-slate-400">{m.date}</p></div>
+                                <div><p className="font-bold text-sm text-blue-400">{m.title}</p><p className="text-xs text-blue-600">{m.date}</p></div>
                             </div>
                             ))}
                         </div>
@@ -242,9 +305,9 @@ const ProjectDetails: React.FC = () => {
                         <div className="flex justify-between items-start mb-4"><h3 className="font-black text-white tracking-tight">AI Action Items</h3><button onClick={generateTasks} disabled={isGeneratingTasks} className="bg-brand-indigo/20 text-brand-indigo px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-2 border border-brand-indigo/30">{isGeneratingTasks ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}<span>{isGeneratingTasks ? 'Thinking' : 'Suggest'}</span></button></div>
                         <div className="space-y-3">
                             {tasks.map(t => (
-                            <div key={t.id} onClick={() => toggleTask(t.id)} className={`flex items-start space-x-3 p-3 rounded-xl cursor-pointer ${t.isCompleted ? 'bg-green-500/10 text-slate-400' : 'bg-white/5'}`}>
+                            <div key={t.id} onClick={() => toggleTask(t.id)} className={`flex items-start space-x-3 p-3 rounded-xl cursor-pointer ${t.isCompleted ? 'bg-green-500/10 text-blue-600' : 'bg-white/5'}`}>
                                 <div className={`w-5 h-5 rounded-md flex items-center justify-center border-2 ${t.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'bg-slate-900 border-slate-600'}`}>{t.isCompleted && <CheckCircle2 size={12} />}</div>
-                                <p className={`text-sm font-medium flex-1 ${t.isCompleted ? 'line-through' : 'text-slate-200'}`}>{t.text}</p>
+                                <p className={`text-sm font-medium flex-1 ${t.isCompleted ? 'line-through' : 'text-blue-400'}`}>{t.text}</p>
                             </div>
                             ))}
                         </div>

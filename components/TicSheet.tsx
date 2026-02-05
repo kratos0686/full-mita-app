@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Project, TicSheetItem } from '../types';
 import { GoogleGenAI, Type } from "@google/genai";
-import { BrainCircuit, Loader2, Plus, Trash2, CheckSquare, Square, Bot, User, ListChecks, ArrowLeft, Save, Download, WifiOff } from 'lucide-react';
+import { BrainCircuit, Loader2, Plus, Trash2, CheckSquare, Square, Bot, User, ListChecks, ArrowLeft, Save, Download, WifiOff, Mic, StopCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { blobToBase64 } from '../utils/photoutils';
 
 interface TicSheetProps {
     project: Project;
@@ -15,17 +16,33 @@ const TicSheet: React.FC<TicSheetProps> = ({ project, isMobile = false, onBack }
     const { isOnline } = useAppContext();
     const [items, setItems] = useState<TicSheetItem[]>(project.ticSheet || []);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
 
     const handleGenerateAIScope = async () => {
         if (!isOnline) return;
         setIsGenerating(true);
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            // Added optional chaining for rooms and fallback string
             const roomsList = project.rooms?.map(r => r.name).join(', ') || 'No rooms listed';
+            const photoContext = project.rooms
+                ?.flatMap(r => r.photos)
+                .map(p => [...p.tags, p.notes].filter(Boolean).join(' - '))
+                .filter(t => t)
+                .join('; ');
+
+            const prompt = `You are an expert water mitigation project estimator using Xactimate standards. Based on the following project data, generate a list of standard line items for a tic sheet. 
+            Project Summary: ${project.summary}. 
+            Water is ${project.waterCategory}, ${project.lossClass}. 
+            Affected rooms include: ${roomsList}.
+            Photo evidence includes: ${photoContext || 'No specific photo details available.'}.
+            For each item, provide a 'category' (e.g., Water Extraction, Demolition, Equipment, Containment), a brief 'description', a standard 'uom' (Unit of Measure), and an estimated 'quantity'. Respond ONLY with a valid JSON object.`;
+            
             const response = await ai.models.generateContent({
                 model: 'gemini-3-pro-preview',
-                contents: `You are an expert water mitigation project estimator using Xactimate standards. Based on the following project data, generate a list of standard line items for a tic sheet. Project Summary: ${project.summary}. Water is ${project.waterCategory}, ${project.lossClass}. Affected rooms include: ${roomsList}. For each item, provide a 'category' (e.g., Water Extraction, Demolition, Equipment, Containment), a brief 'description', a standard 'uom' (Unit of Measure), and an estimated 'quantity'. Respond ONLY with a valid JSON object.`,
+                contents: prompt,
                 config: {
                     responseMimeType: "application/json",
                     responseSchema: {
@@ -50,10 +67,8 @@ const TicSheet: React.FC<TicSheetProps> = ({ project, isMobile = false, onBack }
                 }
             });
             
-            // Safe parsing of AI response
             const text = response.text || '{"items":[]}';
             const parsed = JSON.parse(text);
-            // Ensure result is treated as any to avoid 'unknown' type issues, then access items safely
             const resultItems = (parsed as any).items || [];
             
             if (Array.isArray(resultItems)) {
@@ -71,6 +86,76 @@ const TicSheet: React.FC<TicSheetProps> = ({ project, isMobile = false, onBack }
         } finally {
             setIsGenerating(false);
         }
+    };
+
+    const startRecording = async () => {
+        if (!isOnline) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorderRef.current = new MediaRecorder(stream);
+            audioChunksRef.current = [];
+            mediaRecorderRef.current.ondataavailable = (event) => {
+                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+            };
+            mediaRecorderRef.current.onstop = processAudio;
+            mediaRecorderRef.current.start();
+            setIsRecording(true);
+        } catch (err) { console.error("Mic access error", err); }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+    };
+
+    const processAudio = async () => {
+        setIsProcessingAudio(true);
+        try {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
+            const base64Audio = await blobToBase64(audioBlob);
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            // Transcribe and Parse in one go
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: {
+                    parts: [
+                        { inlineData: { mimeType: 'audio/mp3', data: base64Audio } },
+                        { text: "Listen to this voice note describing a line item for water mitigation. Extract the Description, Quantity, and UOM. If UOM is missing, infer it (e.g. SF, EA, LF). Return JSON." }
+                    ]
+                },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            description: { type: Type.STRING },
+                            quantity: { type: Type.NUMBER },
+                            uom: { type: Type.STRING },
+                            category: { type: Type.STRING }
+                        }
+                    }
+                }
+            });
+            
+            const result = JSON.parse(response.text || '{}');
+            if (result.description) {
+                const newItem: TicSheetItem = {
+                    id: `voice-${Date.now()}`,
+                    category: result.category || 'Voice Entry',
+                    description: result.description,
+                    uom: result.uom || 'EA',
+                    quantity: result.quantity || 1,
+                    included: true,
+                    source: 'manual'
+                };
+                setItems(prev => [...prev, newItem]);
+            }
+        } catch (err) { console.error(err); } 
+        finally { setIsProcessingAudio(false); }
     };
 
     const handleItemChange = (id: string, field: keyof TicSheetItem, value: any) => {
@@ -111,7 +196,7 @@ const TicSheet: React.FC<TicSheetProps> = ({ project, isMobile = false, onBack }
         bg: isMobile ? 'bg-gray-50' : 'bg-slate-900',
         card: isMobile ? 'bg-white' : 'glass-card',
         text: isMobile ? 'text-gray-900' : 'text-white',
-        subtext: isMobile ? 'text-gray-500' : 'text-slate-400',
+        subtext: isMobile ? 'text-blue-600' : 'text-blue-400',
         input: isMobile ? 'bg-gray-100 border-gray-200' : 'bg-white/5 border-white/10 text-white',
         headerIconBg: isMobile ? 'bg-indigo-50 text-indigo-600' : 'bg-brand-indigo/20 text-brand-indigo',
     };
@@ -195,9 +280,19 @@ const TicSheet: React.FC<TicSheetProps> = ({ project, isMobile = false, onBack }
                     ))}
                 </div>
                 <div className="mt-6 flex justify-between">
-                     <button onClick={handleAddItem} className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-bold ${isMobile ? 'bg-gray-100 text-blue-600' : 'bg-white/10 text-brand-cyan'}`}>
-                        <Plus size={16} /><span>Add Manual Item</span>
-                    </button>
+                     <div className="flex space-x-2">
+                        <button onClick={handleAddItem} className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-bold ${isMobile ? 'bg-gray-100 text-blue-600' : 'bg-white/10 text-brand-cyan'}`}>
+                            <Plus size={16} /><span>Add Item</span>
+                        </button>
+                        <button 
+                            onClick={isRecording ? stopRecording : startRecording} 
+                            disabled={isProcessingAudio}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : (isMobile ? 'bg-gray-100 text-slate-600' : 'bg-white/10 text-slate-300')}`}
+                        >
+                            {isProcessingAudio ? <Loader2 size={16} className="animate-spin"/> : isRecording ? <StopCircle size={16} /> : <Mic size={16} />}
+                            <span>{isProcessingAudio ? 'Processing...' : isRecording ? 'Stop Recording' : 'Voice Add'}</span>
+                        </button>
+                     </div>
                     <button className="flex items-center space-x-2 bg-brand-cyan text-slate-900 px-6 py-3 rounded-lg font-bold">
                         <Save size={18} />
                         <span>Save & Authorize</span>

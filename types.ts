@@ -1,4 +1,5 @@
 
+
 export interface Reading {
   timestamp: number;
   temp: number; // Fahrenheit
@@ -67,18 +68,30 @@ export interface Photo {
   timestamp: number;
   tags: string[];
   notes: string;
+  aiInsight?: string;
+}
+
+export interface VideoLog {
+  id: string;
+  url: string;
+  thumbnail?: string;
+  timestamp: number;
+  description: string;
 }
 
 export interface PlacedPhoto extends Photo {
-  x: number; // as a percentage of the floor plan width
-  y: number; // as a percentage of the floor plan height
+  position: {
+    wall: 'floor' | 'ceiling' | 'front' | 'back' | 'left' | 'right';
+    x: number; // percentage from left (0-100)
+    y: number; // percentage from bottom (0-100)
+  };
 }
 
 export interface RoomScan {
   scanId: string;
   roomName: string;
   floorPlanSvg: string;
-  dimensions: { length: number; width: number; sqft: number };
+  dimensions: { length: number; width: number; height: number; sqft: number };
   placedPhotos: PlacedPhoto[];
 }
 
@@ -106,6 +119,15 @@ export interface TicSheetItem {
   quantity: number;
   included: boolean;
   source: 'ai' | 'manual';
+}
+
+export interface PlacedEquipment {
+  id: string;
+  type: 'Air Mover' | 'Dehumidifier' | 'HEPA Scrubber' | 'Heater';
+  model: string;
+  status: 'Running' | 'Off';
+  hours: number;
+  room: string;
 }
 
 
@@ -140,6 +162,7 @@ export interface Project {
   totalCost: number;
   invoiceStatus: 'Draft' | 'Sent' | 'Paid';
   roomScans: RoomScan[];
+  videos: VideoLog[];
   ticSheet: TicSheetItem[];
   complianceChecks: {
       asbestos: 'not_tested' | 'pending' | 'clear' | 'abatement_required';
@@ -147,6 +170,7 @@ export interface Project {
   }
   budget?: number;
   assignedTeam?: string[];
+  equipment?: PlacedEquipment[];
 }
 
 export interface AIProjectData extends Project {

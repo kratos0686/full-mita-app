@@ -6,10 +6,9 @@ import {
   TrendingDown, 
   AlertTriangle, 
   Share2, 
-  Info,
   ArrowLeft,
-  Clock,
-  CheckCircle2
+  CheckCircle2,
+  Droplets
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -21,28 +20,101 @@ import {
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
+import { useAppContext } from '../context/AppContext';
+import { getProjectById } from '../data/mockApi';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface PredictiveAnalysisProps {
   onBack: () => void;
 }
 
 const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
+  const { selectedProjectId, isOnline } = useAppContext();
   const [isAnalyzing, setIsAnalyzing] = useState(true);
+  const [predictionData, setPredictionData] = useState<any>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsAnalyzing(false), 1500);
-    return () => clearTimeout(timer);
-  }, []);
+    const generatePrediction = async () => {
+      if (!selectedProjectId) return;
+      
+      const project = await getProjectById(selectedProjectId);
+      if (!project) return;
 
-  // Mock trajectory data: Actual vs Predicted
-  const data = [
-    { day: 'Day 1', actual: 30, predicted: 30 },
-    { day: 'Day 2', actual: 24, predicted: 23 },
-    { day: 'Day 3', actual: 19, predicted: 18 },
-    { day: 'Day 4', predicted: 14 },
-    { day: 'Day 5', predicted: 11.5 },
-    { day: 'Day 6 (Dry)', predicted: 10 },
-  ];
+      if (!isOnline) {
+          // Offline Fallback
+          setPredictionData({
+              estimatedDryDate: 'Pending Sync',
+              hoursRemaining: 0,
+              confidence: 0,
+              chartData: [],
+              factors: []
+          });
+          setIsAnalyzing(false);
+          return;
+      }
+
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        // Prepare context from project logs
+        const logsContext = JSON.stringify(project.rooms.flatMap(r => r.readings));
+        const roomContext = JSON.stringify(project.rooms.map(r => ({ name: r.name, material: r.photos.map(p => p.tags).flat() })));
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Analyze these drying logs: ${logsContext} for rooms: ${roomContext}. 
+            1. Predict the "dry date" and hours remaining.
+            2. Generate a chart dataset (Array of objects with 'day', 'actual' (optional), 'predicted') showing the moisture content trajectory down to 10%.
+            3. Identify 2 key positive/negative factors affecting drying.
+            Return JSON.`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        estimatedDryDate: { type: Type.STRING },
+                        hoursRemaining: { type: Type.NUMBER },
+                        confidence: { type: Type.NUMBER },
+                        chartData: { 
+                            type: Type.ARRAY, 
+                            items: { 
+                                type: Type.OBJECT, 
+                                properties: { 
+                                    day: { type: Type.STRING }, 
+                                    actual: { type: Type.NUMBER }, 
+                                    predicted: { type: Type.NUMBER } 
+                                } 
+                            } 
+                        },
+                        factors: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: { type: Type.STRING },
+                                    description: { type: Type.STRING },
+                                    type: { type: Type.STRING, enum: ['positive', 'negative'] }
+                                }
+                            }
+                        }
+                    },
+                    required: ['estimatedDryDate', 'hoursRemaining', 'confidence', 'chartData', 'factors']
+                }
+            }
+        });
+        
+        const result = JSON.parse(response.text || '{}');
+        setPredictionData(result);
+
+      } catch (error) {
+          console.error("Prediction failed", error);
+      } finally {
+          setIsAnalyzing(false);
+      }
+    };
+
+    generatePrediction();
+  }, [selectedProjectId, isOnline]);
 
   if (isAnalyzing) {
     return (
@@ -53,11 +125,13 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
         </div>
         <div>
           <h2 className="text-xl font-bold text-gray-900">Calculating Trajectory</h2>
-          <p className="text-gray-500 text-sm mt-2">Analyzing 1,400+ historical drying profiles and current atmospheric logs...</p>
+          <p className="text-gray-500 text-sm mt-2">Analyzing historical drying profiles and current atmospheric logs...</p>
         </div>
       </div>
     );
   }
+
+  if (!predictionData) return <div className="p-8">Unable to generate prediction.</div>;
 
   return (
     <div className="p-4 space-y-6 pb-24">
@@ -83,19 +157,18 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
           </div>
           
           <div className="flex items-baseline space-x-2">
-            <h3 className="text-4xl font-black">Thursday</h3>
-            <span className="text-xl opacity-80">Oct 16</span>
+            <h3 className="text-4xl font-black">{predictionData.estimatedDryDate}</h3>
           </div>
-          <p className="text-blue-100 text-sm mt-1">Approximately 62 hours remaining</p>
+          <p className="text-blue-100 text-sm mt-1">Approximately {predictionData.hoursRemaining} hours remaining</p>
 
           <div className="mt-8 flex items-center space-x-4">
             <div className="flex-1">
               <div className="flex justify-between text-[10px] font-bold uppercase mb-1.5 text-blue-100">
                 <span>Confidence Score</span>
-                <span>92%</span>
+                <span>{predictionData.confidence}%</span>
               </div>
               <div className="w-full bg-white/20 h-1.5 rounded-full overflow-hidden">
-                <div className="bg-white h-full w-[92%] rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+                <div className="bg-white h-full rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" style={{ width: `${predictionData.confidence}%` }} />
               </div>
             </div>
             <button className="bg-white text-blue-700 p-3 rounded-2xl shadow-lg active:scale-95 transition-transform">
@@ -117,7 +190,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
 
         <div className="h-56 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data}>
+            <AreaChart data={predictionData.chartData}>
               <defs>
                 <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2}/>
@@ -126,7 +199,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
               <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
-              <YAxis hide domain={[0, 40]} />
+              <YAxis hide domain={[0, 'dataMax']} />
               <Tooltip 
                 contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
               />
@@ -142,25 +215,17 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
       <div className="space-y-3">
         <h4 className="font-bold text-gray-800 px-1">Factor Analysis</h4>
         
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-start space-x-4">
-          <div className="p-3 bg-green-50 text-green-600 rounded-xl">
-            <TrendingDown size={20} />
-          </div>
-          <div>
-            <h5 className="text-sm font-bold text-gray-900">Evaporation Efficiency</h5>
-            <p className="text-xs text-gray-500 mt-0.5">Grain depression is optimal at 22 GPP. Surface drying is accelerated due to current LGR performance.</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-start space-x-4">
-          <div className="p-3 bg-orange-50 text-orange-600 rounded-xl">
-            <AlertTriangle size={20} />
-          </div>
-          <div>
-            <h5 className="text-sm font-bold text-gray-900">Thermal Lag Detected</h5>
-            <p className="text-xs text-gray-500 mt-0.5">Subfloor temperature is 4°F below ambient. Increasing local heat may reduce dry time by 12 hours.</p>
-          </div>
-        </div>
+        {predictionData.factors.map((factor: any, i: number) => (
+            <div key={i} className="bg-white p-4 rounded-2xl border border-gray-100 flex items-start space-x-4">
+            <div className={`p-3 rounded-xl ${factor.type === 'positive' ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'}`}>
+                {factor.type === 'positive' ? <TrendingDown size={20} /> : <AlertTriangle size={20} />}
+            </div>
+            <div>
+                <h5 className="text-sm font-bold text-gray-900">{factor.title}</h5>
+                <p className="text-xs text-gray-500 mt-0.5">{factor.description}</p>
+            </div>
+            </div>
+        ))}
       </div>
 
       <button className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all">
@@ -172,3 +237,4 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
 };
 
 export default PredictiveAnalysis;
+        

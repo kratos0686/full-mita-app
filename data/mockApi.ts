@@ -8,7 +8,8 @@ import {
   ComplianceCheck, 
   WaterCategory, 
   LossClass,
-  TicSheetItem
+  TicSheetItem,
+  PlacedEquipment
 } from '../types';
 
 // --- Seed Data (Initial State) ---
@@ -33,11 +34,21 @@ const seedProjects: Project[] = [
     lossClass: LossClass.CLASS_3,
     budget: 15000,
     assignedTeam: ['Mike R.', 'Jessica P.'],
+    equipment: [
+      { id: 'AM-4022', type: 'Air Mover', model: 'Phoenix AirMax', status: 'Running', hours: 42.5, room: 'Living Room' },
+      { id: 'DH-1102', type: 'Dehumidifier', model: 'LGR 3500i', status: 'Running', hours: 42.5, room: 'Living Room' },
+      { id: 'AM-4023', type: 'Air Mover', model: 'Phoenix AirMax', status: 'Off', hours: 12.0, room: 'Kitchen' },
+      { id: 'HE-9001', type: 'HEPA Scrubber', model: 'DefendAir HEPA', status: 'Running', hours: 24.8, room: 'Master Bedroom' },
+      { id: 'AM-4024', type: 'Air Mover', model: 'Velo Pro', status: 'Running', hours: 3.2, room: 'Living Room' },
+    ],
     rooms: [
       {
         id: 'r1', name: 'Living Room', status: 'drying',
         dimensions: { length: 15.2, width: 20.1, height: 8 },
-        photos: [{ id: 'p1', url: 'https://picsum.photos/seed/mit1/800/600', timestamp: Date.now(), tags: ['drywall', 'flooring'], notes: 'Initial saturation' }],
+        photos: [
+            { id: 'p1', url: 'https://picsum.photos/seed/mit1/800/600', timestamp: Date.now(), tags: ['drywall', 'flooring'], notes: 'Initial saturation', aiInsight: 'Class 3 Water Intrusion' },
+            { id: 'p2', url: 'https://picsum.photos/seed/mit-lr1/800/600', timestamp: Date.now(), tags: ['equipment setup'], notes: 'Dehu and air movers placed.', aiInsight: 'Optimal Placement Verified' }
+        ],
         readings: [
           { timestamp: Date.now() - 86400000, temp: 72, rh: 85, gpp: 98, mc: 45 },
           { timestamp: Date.now(), temp: 78, rh: 45, gpp: 62, mc: 28 },
@@ -67,12 +78,16 @@ const seedProjects: Project[] = [
         scanId: 'scan-01',
         roomName: 'Living Room',
         floorPlanSvg: '<svg viewBox="0 0 100 100"><polygon points="10,10 90,10 90,90 10,90" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="0.5" stroke-linejoin="round"></polygon></svg>',
-        dimensions: { length: 15.2, width: 20.1, sqft: 305.5 },
+        dimensions: { length: 15.2, width: 20.1, height: 8, sqft: 305.5 },
         placedPhotos: [
-          { id: '1', url: 'https://picsum.photos/seed/mit1/400/400', x: 20, y: 50, timestamp: Date.now(), tags: [], notes: '' },
-          { id: '2', url: 'https://picsum.photos/seed/mit2/400/400', x: 80, y: 50, timestamp: Date.now(), tags: [], notes: '' },
+          { id: '1', url: 'https://picsum.photos/seed/mit-floor/400/400', timestamp: Date.now(), tags: ['flooring'], notes: 'Source of loss under flooring.', position: { wall: 'floor', x: 20, y: 80 } },
+          { id: '2', url: 'https://picsum.photos/seed/mit-west-wall/400/400', timestamp: Date.now(), tags: ['drywall'], notes: 'Water damage on the west wall.', position: { wall: 'left', x: 50, y: 25 } },
+          { id: '3', url: 'https://picsum.photos/seed/mit-window/400/400', timestamp: Date.now(), tags: ['window'], notes: 'Saturation at window sill.', position: { wall: 'back', x: 70, y: 40 } },
         ],
       }
+    ],
+    videos: [
+        { id: 'v1', url: '#', description: 'Initial Walkthrough', timestamp: Date.now() - 86400000 }
     ],
     ticSheet: [
       { id: 'ts1', category: 'Water Extraction', description: 'Weighted extraction, carpet', uom: 'SQFT', quantity: 305, included: true, source: 'manual' },
@@ -122,6 +137,7 @@ const seedProjects: Project[] = [
     totalCost: 0,
     invoiceStatus: 'Draft',
     roomScans: [],
+    videos: [],
     ticSheet: [],
     complianceChecks: {
       asbestos: 'not_tested',
@@ -169,7 +185,7 @@ export const getProjectById = async (id: string): Promise<Project | null> => {
   return projects.find(p => p.id === id) || null;
 };
 
-export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 'milestones' | 'tasks' | 'lineItems' | 'totalCost' | 'invoiceStatus' | 'roomScans' | 'complianceChecks' | 'summary' | 'riskLevel' | 'rooms' | 'ticSheet'>): Promise<Project> => {
+export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 'milestones' | 'tasks' | 'lineItems' | 'totalCost' | 'invoiceStatus' | 'roomScans' | 'complianceChecks' | 'summary' | 'riskLevel' | 'rooms' | 'ticSheet' | 'videos'>): Promise<Project> => {
   await apiDelay(400);
   const projects = loadProjectsFromStorage();
   
@@ -195,6 +211,7 @@ export const addProject = async (projectData: Omit<Project, 'id' | 'progress' | 
     totalCost: 0,
     invoiceStatus: 'Draft',
     roomScans: [],
+    videos: [],
     ticSheet: [],
     complianceChecks: {
       asbestos: 'not_tested',

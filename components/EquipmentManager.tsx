@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Wind, Power, Clock, RefreshCcw, LayoutGrid, List, Plus, X, Save, Box, Tag, Home, Calculator, Zap, AlertTriangle, CheckCircle2, ChevronRight, BrainCircuit, Loader2 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { useAppContext } from '../context/AppContext';
+import { Project, PlacedEquipment } from '../types';
 
 const EQUIPMENT_SPECS: Record<string, { amps: number, volts: number, cfm: number }> = {
   'Phoenix AirMax': { amps: 1.9, volts: 115, cfm: 925 },
@@ -14,20 +15,18 @@ const EQUIPMENT_SPECS: Record<string, { amps: number, volts: number, cfm: number
 
 const CIRCUIT_BREAKER_LIMIT_AMPS = 15;
 
-const EquipmentManager: React.FC<{isMobile?: boolean}> = ({ isMobile = false }) => {
+const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ isMobile = false, project }) => {
   const { isOnline } = useAppContext();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
   const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
   
-  const [equipment, setEquipment] = useState([
-    { id: 'AM-4022', type: 'Air Mover', model: 'Phoenix AirMax', status: 'Running', hours: 42.5, room: 'Living Room' },
-    { id: 'DH-1102', type: 'Dehumidifier', model: 'LGR 3500i', status: 'Running', hours: 42.5, room: 'Living Room' },
-    { id: 'AM-4023', type: 'Air Mover', model: 'Phoenix AirMax', status: 'Off', hours: 12.0, room: 'Kitchen' },
-    { id: 'HE-9001', type: 'HEPA Scrubber', model: 'DefendAir HEPA', status: 'Running', hours: 24.8, room: 'Master Bedroom' },
-    { id: 'AM-4024', type: 'Air Mover', model: 'Velo Pro', status: 'Running', hours: 3.2, room: 'Living Room' },
-  ]);
+  const [equipment, setEquipment] = useState<PlacedEquipment[]>(project.equipment || []);
+  
+  useEffect(() => {
+    setEquipment(project.equipment || []);
+  }, [project]);
 
   const calculationsByRoom = useMemo(() => {
     const rooms: Record<string, { equipment: typeof equipment, totalAmps: number, totalCfm: number }> = {};
@@ -110,7 +109,7 @@ const EquipmentManager: React.FC<{isMobile?: boolean}> = ({ isMobile = false }) 
     bg: isMobile ? 'bg-gray-50 text-gray-900' : 'bg-slate-900 text-white',
     card: isMobile ? 'bg-white border border-gray-100 shadow-sm' : 'glass-card',
     text: isMobile ? 'text-gray-900' : 'text-white',
-    subtext: isMobile ? 'text-gray-500' : 'text-slate-400',
+    subtext: isMobile ? 'text-blue-600' : 'text-blue-400',
     itemBg: isMobile ? 'bg-white' : 'bg-white/5',
     itemBorder: isMobile ? 'border-gray-100' : 'border-white/10'
   };
@@ -123,14 +122,14 @@ const EquipmentManager: React.FC<{isMobile?: boolean}> = ({ isMobile = false }) 
           <p className={`text-sm ${theme.subtext}`}>Runtime & Inventory Tracking</p>
         </div>
         <div className={`flex p-1 rounded-lg ${isMobile ? 'bg-gray-100' : 'bg-slate-800'}`}>
-          <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? `${isMobile ? 'bg-white shadow-sm' : 'bg-slate-700'} text-blue-600` : 'text-gray-400'}`}><LayoutGrid size={18} /></button>
-          <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? `${isMobile ? 'bg-white shadow-sm' : 'bg-slate-700'} text-blue-600` : 'text-gray-400'}`}><List size={18} /></button>
+          <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? `${isMobile ? 'bg-white shadow-sm' : 'bg-slate-700'} text-blue-600` : 'text-blue-400'}`}><LayoutGrid size={18} /></button>
+          <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? `${isMobile ? 'bg-white shadow-sm' : 'bg-slate-700'} text-blue-600` : 'text-blue-400'}`}><List size={18} /></button>
         </div>
       </header>
 
       <div onClick={() => setIsCalculatorOpen(true)} className={`${theme.card} p-5 rounded-[2rem] flex items-center justify-between cursor-pointer group active:scale-[0.98] transition-all hover:bg-white/5`}>
         <div className="flex items-center space-x-4"><div className={`p-3 rounded-2xl border group-hover:scale-110 transition-transform ${isMobile ? 'bg-indigo-50 text-indigo-500 border-indigo-100' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'}`}><Calculator size={24} /></div><div><h3 className={`text-sm font-bold ${theme.text} group-hover:text-brand-indigo`}>Load Calculator</h3><p className={`text-[10px] ${theme.subtext} mt-1 font-medium`}>AI-powered circuit load and CFM analysis.</p></div></div>
-        <ChevronRight size={18} className="text-gray-300 group-hover:text-brand-indigo" />
+        <ChevronRight size={18} className="text-blue-300 group-hover:text-brand-indigo" />
       </div>
 
       {isCalculatorOpen && Object.keys(calculationsByRoom).length > 0 && (
@@ -143,7 +142,7 @@ const EquipmentManager: React.FC<{isMobile?: boolean}> = ({ isMobile = false }) 
                               <span className={`text-xs font-bold ${theme.text}`}>{room}</span>
                               <span className={`text-xs font-mono ${data.totalAmps > 12 ? 'text-red-500' : 'text-green-500'}`}>{data.totalAmps.toFixed(1)}A</span>
                           </div>
-                          <p className="text-[10px] text-gray-500">{aiSuggestions[room] || (isFetchingSuggestions ? "Analyzing..." : "Analysis pending")}</p>
+                          <p className="text-[10px] text-blue-500">{aiSuggestions[room] || (isFetchingSuggestions ? "Analyzing..." : "Analysis pending")}</p>
                       </div>
                   ))}
               </div>

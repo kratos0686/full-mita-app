@@ -16,10 +16,12 @@ import {
 } from 'recharts';
 import { GoogleGenAI } from "@google/genai";
 import { calculatePsychrometricsFromDryBulb } from '../utils/psychrometrics';
+import { Project, Reading } from '../types';
 
 interface DryingLogsProps {
   onOpenAnalysis: () => void;
   isMobile?: boolean;
+  project: Project;
 }
 
 type PsychoLog = {
@@ -38,22 +40,12 @@ type NewReading = {
   rh: string;
 };
 
-const initialPsychoLogs: PsychoLog[] = [
-  { day: 1, ambientGPP: 95, dehuGPP: 45, outdoorGPP: 110 },
-  { day: 2, ambientGPP: 72, dehuGPP: 38, outdoorGPP: 105 },
-];
-
-const initialMoistureLogs: MoistureLog[] = [
-    { day: 1, material: 'Drywall', mc: 28 },
-    { day: 2, material: 'Drywall', mc: 19 },
-];
-
-const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = false }) => {
+const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = false, project }) => {
   const [showAddReading, setShowAddReading] = useState(false);
   const [showAddMoisture, setShowAddMoisture] = useState(false);
   
-  const [psychoLogs, setPsychoLogs] = useState<PsychoLog[]>(initialPsychoLogs);
-  const [moistureLogs, setMoistureLogs] = useState<MoistureLog[]>(initialMoistureLogs);
+  const [psychoLogs, setPsychoLogs] = useState<PsychoLog[]>([]);
+  const [moistureLogs, setMoistureLogs] = useState<MoistureLog[]>([]);
   
   const [ambient, setAmbient] = useState<NewReading>({ temp: '75', rh: '60' });
   const [dehu, setDehu] = useState<NewReading>({ temp: '95', rh: '35' });
@@ -64,6 +56,45 @@ const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = fals
   const [aiChartSummary, setAiChartSummary] = useState<string>('GPP levels are trending downwards, indicating effective dehumidification.');
   const [aiMoistureSummary, setAiMoistureSummary] = useState<string>('Drywall moisture content is decreasing steadily and is on track to meet the dry goal.');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  useEffect(() => {
+    if (project && project.rooms) {
+      const allReadings = project.rooms.flatMap(r => r.readings);
+
+      const readingsByDay = allReadings.reduce((acc, reading) => {
+          const date = new Date(reading.timestamp).toLocaleDateString();
+          if (!acc[date]) acc[date] = [];
+          acc[date].push(reading);
+          return acc;
+      }, {} as Record<string, Reading[]>);
+
+      const sortedDays = Object.keys(readingsByDay).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+      const newPsychoLogs = sortedDays.map((date, index) => {
+          const dayReadings = readingsByDay[date];
+          const avgGpp = dayReadings.reduce((sum, r) => sum + r.gpp, 0) / dayReadings.length;
+          return {
+              day: index + 1,
+              ambientGPP: isNaN(avgGpp) ? 0 : Math.round(avgGpp),
+          };
+      });
+      setPsychoLogs(newPsychoLogs);
+
+      const newMoistureLogs = sortedDays.flatMap((date, index) => {
+          const dayReadings = readingsByDay[date];
+          const mcReading = dayReadings.find(r => r.mc > 0);
+          if (mcReading) {
+              return [{
+                  day: index + 1,
+                  material: 'Drywall', // Assumption
+                  mc: mcReading.mc,
+              }];
+          }
+          return [];
+      });
+      setMoistureLogs(newMoistureLogs);
+    }
+  }, [project]);
 
   const calculatedValues = useMemo(() => {
     const amb = calculatePsychrometricsFromDryBulb(parseFloat(ambient.temp), parseFloat(ambient.rh));
@@ -90,7 +121,7 @@ const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = fals
             model: 'gemini-3-flash-preview',
             contents: `The latest atmospheric readings are: Ambient GPP ${newLog.ambientGPP}, Dehumidifier GPP ${newLog.dehuGPP}, Outdoor GPP ${newLog.outdoorGPP}. The previous day's ambient was ${psychoLogs[psychoLogs.length - 1]?.ambientGPP}. Provide a one-sentence summary of the drying progress.`
         });
-        setAiChartSummary(response.text);
+        setAiChartSummary(response.text || "Analysis complete.");
     } catch(err) { console.error(err); }
     finally { setIsAnalyzing(false); }
   };
@@ -113,41 +144,71 @@ const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = fals
             model: 'gemini-3-flash-preview',
             contents: `A material's moisture content (%MC) history is: [${history}, ${newLog.mc}]. The dry goal is ${newMoisture.dryGoal}%. Provide a one-sentence summary of its drying trajectory.`
         });
-        setAiMoistureSummary(response.text);
+        setAiMoistureSummary(response.text || "Analysis complete.");
     } catch(err) { console.error(err); }
     finally { setIsAnalyzing(false); }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Day', 'Ambient GPP', 'Dehumidifier GPP', 'Outdoor GPP'];
+    const rows = psychoLogs.map(log => [
+        log.day,
+        log.ambientGPP || '',
+        log.dehuGPP || '',
+        log.outdoorGPP || ''
+    ]);
+    
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `drying_logs_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const theme = {
     bg: isMobile ? 'bg-gray-50' : 'bg-slate-900',
     card: isMobile ? 'bg-white shadow-sm border border-gray-100' : 'glass-card',
     text: isMobile ? 'text-gray-900' : 'text-white',
-    subtext: isMobile ? 'text-gray-500' : 'text-slate-400',
-    gridStroke: isMobile ? '#f3f4f6' : 'rgba(255, 255, 255, 0.1)',
-    tickFill: isMobile ? '#9ca3af' : '#94a3b8',
+    subtext: isMobile ? 'text-blue-800' : 'text-blue-600',
+    gridStroke: isMobile ? '#93c5fd' : 'rgba(37, 99, 235, 0.2)',
+    tickFill: isMobile ? '#2563eb' : '#3b82f6',
     tooltipStyle: isMobile 
-        ? { borderRadius: '1rem', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }
-        : { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem' }
+        ? { borderRadius: '1rem', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#fff', color: '#111827' }
+        : { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '0.5rem', color: '#f8fafc' }
   };
 
   return (
     <div className={`space-y-6 ${theme.bg}`}>
-      <header>
-        <h2 className={`text-2xl font-bold ${theme.text} tracking-tight`}>Field Logs</h2>
-        <p className={`text-sm ${theme.subtext} font-medium`}>Psychrometric & Moisture Data</p>
+      <header className="flex items-center justify-between">
+        <div>
+            <h2 className={`text-2xl font-bold ${theme.text} tracking-tight`}>Field Logs</h2>
+            <p className={`text-sm ${theme.subtext} font-medium`}>Psychrometric & Moisture Data</p>
+        </div>
+        <button onClick={handleExportCSV} className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${isMobile ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-white/5 text-blue-500 hover:bg-white/10'}`}>
+            <Download size={14} />
+            <span>Export CSV</span>
+        </button>
       </header>
 
       <section className={`${theme.card} p-5 rounded-[2.5rem]`}>
         <div className="flex justify-between items-start mb-4">
             <div><h3 className={`font-black ${theme.text} tracking-tight`}>GPP Trend</h3><p className={`text-xs ${theme.subtext} mt-0.5`}>Grains Per Pound</p></div>
-            <button onClick={() => setShowAddReading(true)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isMobile ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20'}`}><Plus size={14} /><span>Add Log</span></button>
+            <button onClick={() => setShowAddReading(true)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isMobile ? 'bg-blue-50 text-blue-800 border border-blue-200' : 'bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/20'}`}><Plus size={14} /><span>Add Log</span></button>
         </div>
         <div className="h-56 w-full -ml-2 mb-4"><ResponsiveContainer width="100%" height="100%"><AreaChart data={psychoLogs}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme.gridStroke} /><XAxis dataKey="day" tickFormatter={d => `Day ${d}`} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: theme.tickFill}} /><YAxis hide domain={[0, 'dataMax + 20']} /><Tooltip contentStyle={theme.tooltipStyle} />
-        <Area type="monotone" dataKey="ambientGPP" name="Ambient" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={3} />
-        <Area type="monotone" dataKey="dehuGPP" name="Dehumidifier" stroke="#10b981" fill="#10b981" fillOpacity={0.1} strokeWidth={3} />
-        <Area type="monotone" dataKey="outdoorGPP" name="Outdoor" stroke="#a8a29e" fill="#a8a29e" fillOpacity={0.1} strokeWidth={2} strokeDasharray="3 3" /></AreaChart></ResponsiveContainer></div>
-        <div className={`p-3 rounded-xl flex items-start space-x-3 text-xs font-medium ${isMobile ? 'bg-blue-50/70 border-blue-100/80 text-blue-900' : 'bg-blue-500/10 border-blue-500/20 text-blue-300'} border`}>
-          <Sparkles size={24} className={isMobile ? 'text-blue-500' : 'text-blue-400'} shrink-0 mt-0.5" />
+        <Area type="monotone" dataKey="ambientGPP" name="Ambient" stroke="#2563eb" fill="#2563eb" fillOpacity={0.1} strokeWidth={3} activeDot={{ r: 6, strokeWidth: 0 }} />
+        <Area type="monotone" dataKey="dehuGPP" name="Dehumidifier" stroke="#059669" fill="#059669" fillOpacity={0.1} strokeWidth={3} activeDot={{ r: 6, strokeWidth: 0 }} />
+        <Area type="monotone" dataKey="outdoorGPP" name="Outdoor" stroke="#78716c" fill="#78716c" fillOpacity={0.1} strokeWidth={2} strokeDasharray="3 3" activeDot={{ r: 6, strokeWidth: 0 }} /></AreaChart></ResponsiveContainer></div>
+        <div className={`p-3 rounded-xl flex items-start space-x-3 text-xs font-medium ${isMobile ? 'bg-blue-100/70 border-blue-200/80 text-blue-900' : 'bg-blue-600/10 border-blue-600/20 text-blue-500'} border`}>
+          <Sparkles size={24} className={isMobile ? 'text-blue-700' : 'text-blue-600'} shrink-0 mt-0.5" />
           <p>{isAnalyzing ? 'Analyzing latest data...' : aiChartSummary}</p>
         </div>
       </section>
@@ -155,14 +216,14 @@ const DryingLogs: React.FC<DryingLogsProps> = ({ onOpenAnalysis, isMobile = fals
       <section className={`${theme.card} p-5 rounded-[2.5rem]`}>
         <div className="flex justify-between items-start mb-4">
             <div><h3 className={`font-black ${theme.text} tracking-tight`}>Moisture Trajectory</h3><p className={`text-xs ${theme.subtext} mt-0.5`}>Drywall MC%</p></div>
-            <button onClick={() => setShowAddMoisture(true)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isMobile ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}><Ruler size={14} /><span>Log Moisture</span></button>
+            <button onClick={() => setShowAddMoisture(true)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isMobile ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-emerald-600/10 text-emerald-500 border border-emerald-600/20'}`}><Ruler size={14} /><span>Log Moisture</span></button>
         </div>
         <div className="h-56 w-full -ml-2 mb-4"><ResponsiveContainer width="100%" height="100%"><LineChart data={moistureLogs}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme.gridStroke} /><XAxis dataKey="day" tickFormatter={d => `Day ${d}`} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: theme.tickFill}} /><YAxis hide domain={[0, 'dataMax + 5']} /><Tooltip contentStyle={theme.tooltipStyle} />
         <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: theme.subtext}}/>
-        <ReferenceLine y={parseFloat(newMoisture.dryGoal)} label={{ value: 'Dry Goal', position: 'insideTopLeft', fontSize: 10, fill: '#ef4444', dy: -5 }} stroke="#ef4444" strokeDasharray="3 3" />
-        <Line type="monotone" dataKey="mc" name="Moisture Content" stroke="#10b981" strokeWidth={4} dot={{ r: 6, fill: '#10b981', stroke: 'white', strokeWidth: 2 }} activeDot={{ r: 8 }} /></LineChart></ResponsiveContainer></div>
-         <div className={`p-3 rounded-xl flex items-start space-x-3 text-xs font-medium ${isMobile ? 'bg-emerald-50/70 border-emerald-100/80 text-emerald-900' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'} border`}>
-          <Sparkles size={24} className={isMobile ? 'text-emerald-500' : 'text-emerald-400'} shrink-0 mt-0.5" />
+        <ReferenceLine y={parseFloat(newMoisture.dryGoal)} label={{ value: 'Dry Goal', position: 'insideTopLeft', fontSize: 10, fill: '#dc2626', dy: -5 }} stroke="#dc2626" strokeDasharray="3 3" />
+        <Line type="monotone" dataKey="mc" name="Moisture Content" stroke="#059669" strokeWidth={4} dot={{ r: 6, fill: '#059669', stroke: 'white', strokeWidth: 2 }} activeDot={{ r: 8 }} /></LineChart></ResponsiveContainer></div>
+         <div className={`p-3 rounded-xl flex items-start space-x-3 text-xs font-medium ${isMobile ? 'bg-emerald-100/70 border-emerald-200/80 text-emerald-900' : 'bg-emerald-600/10 border-emerald-600/20 text-emerald-500'} border`}>
+          <Sparkles size={24} className={isMobile ? 'text-emerald-700' : 'text-emerald-600'} shrink-0 mt-0.5" />
           <p>{isAnalyzing ? 'Analyzing latest data...' : aiMoistureSummary}</p>
         </div>
       </section>

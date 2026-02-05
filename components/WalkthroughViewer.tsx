@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCcw, Image as ImageIcon, Camera, Box, Grid3X3 } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, RotateCcw, Image as ImageIcon, Camera, Box, Grid3X3, Layers } from 'lucide-react';
 import { RoomScan, PlacedPhoto } from '../types';
 
 interface WalkthroughViewerProps {
@@ -64,7 +64,6 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
 
   const isWireframe = renderMode === 'wireframe';
 
-  // Styles based on Render Mode
   const wallStyle = isWireframe 
     ? { background: 'rgba(59, 130, 246, 0.05)', border: '1px solid #3b82f6' } 
     : { backgroundImage: 'url(https://www.transparenttextures.com/patterns/concrete-wall.png)', backgroundColor: '#e5e7eb', borderBottom: '2px solid #d1d5db' };
@@ -73,11 +72,21 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
     ? { background: 'transparent', border: '1px solid #3b82f6', opacity: 0.5 }
     : { backgroundImage: 'url(https://www.transparenttextures.com/patterns/wood-pattern.png)', backgroundColor: '#d1d5db', backgroundSize: '80px' };
 
+  const PhotoMarker: React.FC<{ photo: PlacedPhoto }> = ({ photo }) => (
+    <button onClick={() => setSelectedPhoto(photo)} className="absolute w-8 h-8 -m-4 flex items-center justify-center group z-10" style={{ left: `${photo.position.x}%`, bottom: `${photo.position.y}%` }}>
+      <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-pulse group-hover:opacity-50 shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
+      <div className="relative w-4 h-4 bg-white rounded-full flex items-center justify-center text-blue-600 shadow-lg ring-2 ring-blue-400"><Camera size={10} /></div>
+      <div className="absolute -top-8 bg-black/80 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+          {photo.notes || `Photo #${photo.id}`}
+      </div>
+    </button>
+  );
+
   return (
     <div className="fixed inset-0 bg-gray-900 z-[100] flex flex-col animate-in fade-in duration-300">
       <header className="flex items-center justify-between p-4 bg-gray-900/80 backdrop-blur-md text-white border-b border-white/10 z-20">
         <div className="flex items-center space-x-3">
-          <div className="p-2 bg-emerald-500/20 rounded-lg"><ImageIcon size={20} className="text-emerald-400"/></div>
+          <div className="p-2 bg-emerald-500/20 rounded-lg"><Layers size={20} className="text-emerald-400"/></div>
           <div><h3 className="font-bold">{scan.roomName} Walkthrough</h3><p className="text-[10px] uppercase font-bold text-slate-400">{scan.dimensions.sqft.toFixed(1)} SQ FT • {scan.dimensions.length.toFixed(1)}' x {scan.dimensions.width.toFixed(1)}'</p></div>
         </div>
         
@@ -90,10 +99,7 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
       </header>
 
       <main className="flex-1 flex items-center justify-center overflow-hidden relative" onWheel={handleWheel}>
-        {/* Grid Background */}
-        <div className="absolute inset-0 pointer-events-none opacity-20" 
-             style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
-        />
+        <div className="absolute inset-0 pointer-events-none opacity-20" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
 
         <div 
           className="w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing"
@@ -104,39 +110,28 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
           <div className="relative transition-transform duration-300" style={{ transform: `scale(${zoom})`, transformStyle: 'preserve-3d' }}>
             <div className="relative" style={{ transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg)`, transformStyle: 'preserve-3d', width: `${widthRem}rem`, height: `${lengthRem}rem` }}>
               
-              {/* Floor */}
-              <div className="absolute inset-0" style={{ transform: `translateZ(-${wallHeightRem / 2}rem) rotateX(90deg)`, ...floorStyle }}>
-                 {/* Floor Grid in Wireframe */}
+              <div className="absolute inset-0" style={{ transform: `translateZ(-${wallHeightRem / 2}rem) rotateX(90deg)`, ...floorStyle, transformStyle: 'preserve-3d' }}>
                  {isWireframe && <div className="absolute inset-0" style={{backgroundImage: 'linear-gradient(rgba(59, 130, 246, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.3) 1px, transparent 1px)', backgroundSize: '20px 20px'}} />}
-                 
-                 {/* Photo Markers */}
-                 {scan.placedPhotos.map(photo => (
-                  <button key={photo.id} onClick={() => setSelectedPhoto(photo)} className="absolute w-8 h-8 -m-4 flex items-center justify-center group z-10" style={{ left: `${photo.x}%`, top: `${photo.y}%`, transform: 'rotateX(-90deg)' }}>
-                    <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-pulse group-hover:opacity-50 shadow-[0_0_15px_rgba(59,130,246,0.6)]" />
-                    <div className="relative w-4 h-4 bg-white rounded-full flex items-center justify-center text-blue-600 shadow-lg ring-2 ring-blue-400"><Camera size={10} /></div>
-                    <div className="absolute -top-8 bg-black/80 text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                        View Photo
-                    </div>
-                  </button>
-                ))}
+                 {scan.placedPhotos.filter(p => p.position.wall === 'floor').map(photo => <div key={photo.id} style={{transform: 'rotateX(-90deg)'}}><PhotoMarker photo={photo} /></div>)}
               </div>
 
-              {/* Ceiling (Wireframe Only) */}
               {isWireframe && <div className="absolute inset-0 border border-blue-500/30 bg-blue-500/5" style={{ transform: `translateZ(${wallHeightRem / 2}rem) rotateX(90deg)` }} />}
 
-              {/* Walls Container */}
               <div className="absolute w-full h-full" style={{ transform: `translateZ(-${wallHeightRem / 2}rem)`, transformStyle: 'preserve-3d' }}>
-                 {/* Front Wall */}
-                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
-                {/* Back Wall */}
-                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, opacity: isWireframe ? 1 : 0.3 }} />
-                {/* Left Wall */}
-                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
-                {/* Right Wall */}
-                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle }} />
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, transformStyle: 'preserve-3d' }}>
+                    {scan.placedPhotos.filter(p => p.position.wall === 'back').map(photo => <PhotoMarker key={photo.id} photo={photo} />)}
+                </div>
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, transform: `rotateY(180deg) translateZ(${lengthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, opacity: isWireframe ? 1 : 0.3, transformStyle: 'preserve-3d' }}>
+                     {scan.placedPhotos.filter(p => p.position.wall === 'front').map(photo => <PhotoMarker key={photo.id} photo={photo} />)}
+                </div>
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, transformStyle: 'preserve-3d' }}>
+                     {scan.placedPhotos.filter(p => p.position.wall === 'left').map(photo => <PhotoMarker key={photo.id} photo={photo} />)}
+                </div>
+                <div className="absolute inset-0 origin-bottom" style={{ height: `${wallHeightRem}rem`, width: `${lengthRem}rem`, left: `-${(lengthRem - widthRem) / 2}rem`, transform: `rotateY(-90deg) translateZ(${widthRem / 2}rem) rotateX(-90deg)`, ...wallStyle, transformStyle: 'preserve-3d' }}>
+                     {scan.placedPhotos.filter(p => p.position.wall === 'right').map(photo => <PhotoMarker key={photo.id} photo={photo} />)}
+                </div>
               </div>
               
-              {/* Measurement Labels (Always visible for context) */}
               <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10">{dimensions.width.toFixed(1)}' Width</div>
               <div className="absolute -left-12 top-1/2 -translate-y-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10" style={{transform: 'rotate(-90deg)'}}>{dimensions.length.toFixed(1)}' Length</div>
               <div className="absolute -right-12 top-1/2 -translate-y-1/2 text-center text-xs text-white font-bold bg-black/60 px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap ring-1 ring-white/10" style={{transform: 'rotate(90deg)'}}>8.0' Height</div>
@@ -158,12 +153,9 @@ const WalkthroughViewer: React.FC<WalkthroughViewerProps> = ({ scan, onClose }) 
           <div className="relative max-w-4xl w-full p-4" onClick={e => e.stopPropagation()}>
               <button onClick={() => setSelectedPhoto(null)} className="absolute -top-12 right-4 text-white hover:text-gray-300"><X size={32}/></button>
               <img src={selectedPhoto.url} className="w-full h-auto max-h-[80vh] object-contain rounded-xl shadow-2xl ring-1 ring-white/20 animate-in zoom-in-95 duration-300" alt={`Site photo ${selectedPhoto.id}`} />
-              <div className="mt-4 flex justify-between items-center text-white">
-                  <div>
-                      <h4 className="font-bold text-lg">Site Photo</h4>
-                      <p className="text-sm text-gray-400">Captured at coordinates {selectedPhoto.x.toFixed(0)}, {selectedPhoto.y.toFixed(0)}</p>
-                  </div>
-                  {/* Future: Add notes/tags display here */}
+              <div className="mt-4 text-white text-center">
+                  <h4 className="font-bold text-lg">{selectedPhoto.notes || `Photo ID: ${selectedPhoto.id}`}</h4>
+                  <p className="text-sm text-gray-400">Position: {selectedPhoto.position.wall} wall</p>
               </div>
           </div>
         </div>

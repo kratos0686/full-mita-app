@@ -81,7 +81,7 @@ const App: React.FC = () => {
     }
 
     if (view === 'ar-scan') {
-      return <ARScanner onCapture={handleCapture} onClose={() => setView(selectedProjectId ? 'project' : 'dashboard')} />;
+      return <ARScanner onComplete={() => setView(selectedProjectId ? 'project' : 'dashboard')} />;
     }
 
     if (view === 'project' && selectedProjectId) {
@@ -168,9 +168,8 @@ const App: React.FC = () => {
       
       {view !== 'ar-scan' && view !== 'job-intake' && (
         <CommandCenter 
-          onCommand={handleCommand} 
-          isListening={isListening} 
-          toggleListening={() => setIsListening(!isListening)} 
+          isOpen={isListening} 
+          onClose={() => setIsListening(false)} 
         />
       )}
     </div>

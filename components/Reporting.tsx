@@ -50,7 +50,7 @@ const Reporting: React.FC = () => {
         <div className="p-8 space-y-8">
             <header>
                 <h1 className="text-3xl font-bold text-white">Reporting Center</h1>
-                <p className="text-slate-400">Generate operational and financial reports for analysis and record-keeping.</p>
+                <p className="text-blue-400">Generate operational and financial reports for analysis and record-keeping.</p>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -93,12 +93,12 @@ interface ReportCardProps {
 const ReportCard: React.FC<ReportCardProps> = ({ icon, title, description, onGenerate }) => (
     <div className="glass-card rounded-2xl p-6 flex flex-col">
         <div className="flex items-center space-x-4 mb-4">
-            <div className="p-3 bg-white/5 rounded-xl text-slate-300">
+            <div className="p-3 bg-white/5 rounded-xl text-blue-300">
                 {icon}
             </div>
             <h3 className="text-lg font-bold text-white">{title}</h3>
         </div>
-        <p className="text-sm text-slate-400 flex-1 mb-6">{description}</p>
+        <p className="text-sm text-blue-400 flex-1 mb-6">{description}</p>
         <button 
             onClick={onGenerate}
             className="w-full py-3 bg-brand-cyan/10 text-brand-cyan rounded-lg font-bold text-sm flex items-center justify-center space-x-2 border border-brand-cyan/20 hover:bg-brand-cyan/20 transition-colors"

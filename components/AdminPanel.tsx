@@ -17,7 +17,7 @@ const AdminPanel: React.FC = () => {
         <div className="p-8 space-y-8">
             <header>
                 <h1 className="text-3xl font-bold text-white">Administrator Panel</h1>
-                <p className="text-slate-400">Manage users, system settings, and integrations.</p>
+                <p className="text-blue-400">Manage users, system settings, and integrations.</p>
             </header>
 
             <section className="glass-card rounded-2xl p-6">
@@ -30,7 +30,7 @@ const AdminPanel: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-slate-400 uppercase">
+                        <thead className="text-xs text-blue-400 uppercase">
                             <tr>
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Role</th>
@@ -43,7 +43,7 @@ const AdminPanel: React.FC = () => {
                                 <tr key={user.id} className="hover:bg-white/5">
                                     <td className="p-3 font-medium text-white">{user.name}</td>
                                     <td className="p-3"><span className="bg-white/10 px-2 py-0.5 rounded-full text-xs">{user.role}</span></td>
-                                    <td className="p-3 text-slate-300">{user.email}</td>
+                                    <td className="p-3 text-blue-300">{user.email}</td>
                                     <td className="p-3 text-right font-bold text-brand-cyan"><button>Edit</button></td>
                                 </tr>
                             ))}
@@ -56,7 +56,7 @@ const AdminPanel: React.FC = () => {
                 <h3 className="text-lg font-bold text-white mb-6">System Settings</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
-                        <h4 className="font-bold text-slate-300 border-b border-white/10 pb-2">AI & Automation</h4>
+                        <h4 className="font-bold text-blue-300 border-b border-white/10 pb-2">AI & Automation</h4>
                         <SettingToggle
                             icon={<Shield />}
                             label="AI Compliance Monitoring"
@@ -73,8 +73,8 @@ const AdminPanel: React.FC = () => {
                         />
                     </div>
                      <div className="space-y-4">
-                        <h4 className="font-bold text-slate-300 border-b border-white/10 pb-2">Integrations</h4>
-                        <p className="text-sm text-slate-400">Manage connections to external services like accounting software and insurance portals.</p>
+                        <h4 className="font-bold text-blue-300 border-b border-white/10 pb-2">Integrations</h4>
+                        <p className="text-sm text-blue-400">Manage connections to external services like accounting software and insurance portals.</p>
                          <button className="bg-white/5 px-4 py-2 rounded-lg text-sm font-bold border border-white/10">Connect to QuickBooks</button>
                     </div>
                 </div>
@@ -99,7 +99,7 @@ interface SettingToggleProps {
 
 const SettingToggle: React.FC<SettingToggleProps> = ({ icon, label, description, enabled, onToggle }) => (
     <div className="flex items-start space-x-4">
-        <div className="p-2 bg-white/5 rounded-lg text-slate-300 mt-1">{icon}</div>
+        <div className="p-2 bg-white/5 rounded-lg text-blue-300 mt-1">{icon}</div>
         <div className="flex-1">
             <label className="flex items-center justify-between cursor-pointer">
                 <span className="font-bold text-white">{label}</span>
@@ -107,7 +107,7 @@ const SettingToggle: React.FC<SettingToggleProps> = ({ icon, label, description,
                     <div className="w-4 h-4 bg-white rounded-full shadow-md" />
                 </div>
             </label>
-            <p className="text-xs text-slate-400 pr-12">{description}</p>
+            <p className="text-xs text-blue-400 pr-12">{description}</p>
         </div>
     </div>
 );

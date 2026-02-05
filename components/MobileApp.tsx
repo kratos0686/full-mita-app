@@ -42,13 +42,13 @@ const MobileApp: React.FC = () => {
     
     useEffect(() => {
         const fetchProject = async () => {
-            if (activeTab === 'tic-sheet' && selectedProjectId) {
+            if (selectedProjectId) {
                 const p = await getProjectById(selectedProjectId);
                 setProject(p);
             }
         };
         fetchProject();
-    }, [activeTab, selectedProjectId]);
+    }, [selectedProjectId]);
 
 
     const handleScanComplete = async (scanData?: RoomScan) => {
@@ -59,19 +59,23 @@ const MobileApp: React.FC = () => {
     };
 
     const renderContent = () => {
+        if (!project && ['logs', 'equipment', 'photos', 'tic-sheet'].includes(activeTab)) {
+            return <div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>;
+        }
+
         switch (activeTab) {
         case 'dashboard': return <Dashboard />;
         case 'scanner': return <ARScanner onComplete={handleScanComplete} />;
-        case 'logs': return <DryingLogs onOpenAnalysis={() => setActiveTab('analysis')} isMobile={true} />;
-        case 'equipment': return <EquipmentManager isMobile={true} />;
-        case 'photos': return <PhotoDocumentation onStartScan={() => setActiveTab('scanner')} isMobile={true} />;
+        case 'logs': return <DryingLogs onOpenAnalysis={() => setActiveTab('analysis')} isMobile={true} project={project!} />;
+        case 'equipment': return <EquipmentManager isMobile={true} project={project!} />;
+        case 'photos': return <PhotoDocumentation onStartScan={() => setActiveTab('scanner')} isMobile={true} project={project!} />;
         case 'project': return <ProjectDetails />;
         case 'analysis': return <PredictiveAnalysis onBack={() => setActiveTab('logs')} />;
         case 'reference': return <ReferenceGuide onBack={() => setActiveTab('dashboard')} />;
         case 'forms': return <Forms onComplete={() => setActiveTab('project')} />;
         case 'new-project': return <NewProject />;
         case 'billing': return <Billing />;
-        case 'tic-sheet': return project ? <TicSheet project={project} isMobile={true} onBack={() => setActiveTab('project')} /> : <div>Loading...</div>;
+        case 'tic-sheet': return <TicSheet project={project!} isMobile={true} onBack={() => setActiveTab('project')} />;
         default: return <Dashboard />;
         }
     };
@@ -84,7 +88,7 @@ const MobileApp: React.FC = () => {
                     <h1 className="font-black text-xl text-white tracking-tighter">Mitigation<span className="text-brand-cyan">AI</span></h1>
                 </div>
                 <div className="flex items-center space-x-2">
-                    <button onClick={() => setIsCliOpen(true)} className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-slate-300"><TerminalIcon size={18} /></button>
+                    <button onClick={() => setIsCliOpen(true)} className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-blue-500"><TerminalIcon size={18} /></button>
                     <button onClick={() => setIsAiOpen(true)} disabled={!isOnline} className={`w-10 h-10 bg-gradient-to-tr rounded-xl flex items-center justify-center text-white shadow-xl transition-opacity ${!isOnline ? 'from-gray-700 to-gray-600 opacity-50 cursor-not-allowed' : 'from-blue-500 to-indigo-600'}`}><Sparkles size={18} /></button>
                 </div>
             </header>
@@ -95,29 +99,31 @@ const MobileApp: React.FC = () => {
                 </div>
             )}
 
-            <main className="flex-1 overflow-y-auto pb-32 bg-gray-50 text-gray-900">
+            <main className={`flex-1 overflow-y-auto bg-gray-50 text-gray-900 ${activeTab === 'scanner' ? '' : 'pb-32'}`}>
                 {renderContent()}
             </main>
 
             {isOnline && <GeminiAssistant context={activeTab} isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />}
             <CommandCenter isOpen={isCliOpen} onClose={() => setIsCliOpen(false)} />
 
-            <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/80 backdrop-blur-xl border-t border-white/10 flex justify-around items-center py-4 z-50 rounded-t-[3rem] shadow-[0_-12px_40px_rgba(0,0,0,0.2)]">
-                <MobileNavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={24} />} label="Home" />
-                <MobileNavButton active={activeTab === 'logs' || activeTab === 'analysis'} onClick={() => setActiveTab('logs')} icon={<Droplets size={24} />} label="Metrics" />
-                <div className="relative -top-8">
-                    <button onClick={() => setActiveTab('scanner')} className={`w-16 h-16 rounded-[2.2rem] flex items-center justify-center shadow-2xl transition-all ${activeTab === 'scanner' ? 'bg-blue-700 scale-110 shadow-blue-500/50' : 'bg-blue-600 shadow-blue-500/40'} text-white ring-8 ring-slate-800 active:scale-95`}><Scan size={28} /></button>
-                </div>
-                <MobileNavButton active={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} icon={<Wind size={24} />} label="Gear" />
-                <MobileNavButton active={activeTab === 'forms'} onClick={() => setActiveTab('forms')} icon={<ClipboardList size={24} />} label="Forms" />
-            </nav>
+            {(activeTab as string) !== 'scanner' && (
+                <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/80 backdrop-blur-xl border-t border-white/10 flex justify-around items-center py-4 z-50 rounded-t-[3rem] shadow-[0_-12px_40px_rgba(0,0,0,0.2)]">
+                    <MobileNavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={24} />} label="Home" />
+                    <MobileNavButton active={activeTab === 'logs' || activeTab === 'analysis'} onClick={() => setActiveTab('logs')} icon={<Droplets size={24} />} label="Metrics" />
+                    <div className="relative -top-8">
+                        <button onClick={() => setActiveTab('scanner')} className={`w-16 h-16 rounded-[2.2rem] flex items-center justify-center shadow-2xl transition-all ${activeTab === 'scanner' ? 'bg-blue-700 scale-110 shadow-blue-500/50' : 'bg-blue-600 shadow-blue-500/40'} text-white ring-8 ring-slate-800 active:scale-95`}><Scan size={28} /></button>
+                    </div>
+                    <MobileNavButton active={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} icon={<Wind size={24} />} label="Gear" />
+                    <MobileNavButton active={activeTab === 'forms'} onClick={() => setActiveTab('forms')} icon={<ClipboardList size={24} />} label="Forms" />
+                </nav>
+            )}
         </div>
     );
 };
 
 
 const MobileNavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
-    <button onClick={onClick} className={`flex flex-col items-center space-y-1.5 transition-all duration-300 ${active ? 'text-brand-cyan scale-105' : 'text-slate-400 hover:text-slate-200'}`}>
+    <button onClick={onClick} className={`flex flex-col items-center space-y-1.5 transition-all duration-300 ${active ? 'text-brand-cyan scale-105' : 'text-blue-600 hover:text-blue-400'}`}>
       <div className={`p-1.5 rounded-xl transition-colors ${active ? 'bg-brand-cyan/10' : 'bg-transparent'}`}>{icon}</div>
       <span className={`text-[8px] font-black uppercase tracking-[0.15em] ${active ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
     </button>
