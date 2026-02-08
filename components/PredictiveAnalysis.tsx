@@ -29,7 +29,7 @@ interface PredictiveAnalysisProps {
 }
 
 const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
-  const { selectedProjectId, isOnline } = useAppContext();
+  const { selectedProjectId, isOnline, accessToken } = useAppContext();
   const [isAnalyzing, setIsAnalyzing] = useState(true);
   const [predictionData, setPredictionData] = useState<any>(null);
 
@@ -40,7 +40,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
       const project = await getProjectById(selectedProjectId);
       if (!project) return;
 
-      if (!isOnline) {
+      if (!isOnline || !accessToken) {
           // Offline Fallback
           setPredictionData({
               estimatedDryDate: 'Pending Sync',
@@ -54,7 +54,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
       }
 
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: accessToken }); // Using OAuth Token
         
         // Prepare context from project logs
         const logsContext = JSON.stringify(project.rooms.flatMap(r => r.readings));
@@ -114,7 +114,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
     };
 
     generatePrediction();
-  }, [selectedProjectId, isOnline]);
+  }, [selectedProjectId, isOnline, accessToken]);
 
   if (isAnalyzing) {
     return (
@@ -237,4 +237,3 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
 };
 
 export default PredictiveAnalysis;
-        

@@ -1,5 +1,4 @@
 
-
 export interface Reading {
   timestamp: number;
   temp: number; // Fahrenheit
@@ -21,12 +20,6 @@ export enum LossClass {
   CLASS_4 = 'Class 4 (Specialty)'
 }
 
-export enum MoldCondition {
-  COND_1 = 'Condition 1 (Normal)',
-  COND_2 = 'Condition 2 (Settled Spores)',
-  COND_3 = 'Condition 3 (Active Growth)'
-}
-
 export interface SafetyAssessment {
   electricalSafe: boolean;
   structuralSafe: boolean;
@@ -34,12 +27,6 @@ export interface SafetyAssessment {
   ppeRequired: string[];
   notes: string;
   completedAt: number;
-}
-
-export interface Equipment {
-  type: 'dehumidifier' | 'air_mover' | 'scrubber' | 'heater';
-  count: number;
-  model?: string;
 }
 
 export interface Milestone {
@@ -56,10 +43,12 @@ export interface AITask {
 
 export interface LineItem {
     id:string;
+    code?: string; // e.g. WTR [BASEA]
     description: string;
     quantity: number;
     rate: number;
     total: number;
+    category?: string;
 }
 
 export interface Photo {
@@ -69,6 +58,7 @@ export interface Photo {
   tags: string[];
   notes: string;
   aiInsight?: string;
+  type?: 'image' | 'video';
 }
 
 export interface VideoLog {
@@ -102,7 +92,15 @@ export interface Room {
   readings: Reading[];
   photos: Photo[];
   status: 'wet' | 'drying' | 'dry';
-  moldCondition?: MoldCondition;
+}
+
+export interface PlacedEquipment {
+  id: string;
+  type: 'Air Mover' | 'Dehumidifier' | 'HEPA Scrubber' | 'Heater';
+  model: string;
+  status: 'Running' | 'Off' | 'Removed';
+  hours: number;
+  room: string;
 }
 
 export interface ComplianceCheck {
@@ -111,50 +109,39 @@ export interface ComplianceCheck {
     isCompleted: boolean;
 }
 
-export interface TicSheetItem {
-  id: string;
-  category: string;
-  description: string;
-  uom: string; // Unit of Measure
-  quantity: number;
-  included: boolean;
-  source: 'ai' | 'manual';
-}
+export type ProjectStage = 'Intake' | 'Inspection' | 'Scope' | 'Stabilize' | 'Monitor' | 'Closeout';
 
-export interface PlacedEquipment {
-  id: string;
-  type: 'Air Mover' | 'Dehumidifier' | 'HEPA Scrubber' | 'Heater';
-  model: string;
-  status: 'Running' | 'Off';
-  hours: number;
-  room: string;
-}
-
-
+// Renamed from Project to LossFile to match "Mitigate" terminology
 export interface Project {
   id: string;
-  client: string;
-  clientEmail: string;
-  clientPhone: string;
+  companyId: string;
+  client: string; // Client Display Name
+  clientEmail?: string;
+  clientPhone?: string;
   address: string;
-  status: string;
-  progress: number;
-  estimate: string;
-  logs: string;
-  insurance: string;
-  policyNumber: string;
-  adjuster: string;
-  startDate: string;
   
-  // Merged from MitigationAI types
-  summary: string;
+  status: string; // General status text
+  currentStage: ProjectStage; // Workflow Step
+  progress: number;
+  
+  // Dates
+  lossDate?: string;
+  startDate?: string;
+  estimate?: string;
+
+  // Insurance
+  insurance?: string;
+  policyNumber?: string;
+  adjuster?: string;
+  claimNumber?: string; // Added claim number
+  
+  summary?: string;
+  logs?: string;
   riskLevel: 'low' | 'medium' | 'high';
   rooms: Room[];
   
-  // S-500 Specifics
   waterCategory?: WaterCategory;
   lossClass?: LossClass;
-  safetyAssessment?: SafetyAssessment;
   
   milestones: Milestone[];
   tasks: AITask[];
@@ -163,7 +150,7 @@ export interface Project {
   invoiceStatus: 'Draft' | 'Sent' | 'Paid';
   roomScans: RoomScan[];
   videos: VideoLog[];
-  ticSheet: TicSheetItem[];
+  
   complianceChecks: {
       asbestos: 'not_tested' | 'pending' | 'clear' | 'abatement_required';
       aiChecklist: ComplianceCheck[];
@@ -171,7 +158,10 @@ export interface Project {
   budget?: number;
   assignedTeam?: string[];
   equipment?: PlacedEquipment[];
+  ticSheet?: any[];
 }
+
+export type LossFile = Project;
 
 export interface AIProjectData extends Project {
   aiSummary: string;
@@ -182,6 +172,64 @@ export interface AIProjectData extends Project {
   priority: number;
 }
 
-export type Tab = 'dashboard' | 'scanner' | 'logs' | 'equipment' | 'photos' | 'project' | 'analysis' | 'reference' | 'forms' | 'new-project' | 'billing' | 'tic-sheet';
-export type ViewState = 'dashboard' | 'job-intake' | 'project' | 'ar-scan' | 'consult';
-export type UserRole = 'Admin' | 'Manager' | 'Technician' | 'Billing';
+export interface AppSettings {
+  language: string;
+  dateFormat: string;
+  timeFormat: string;
+  units: {
+    temperature: 'Fahrenheit' | 'Celsius';
+    dimension: 'LF Inch' | 'Meters';
+    humidity: 'Grains / Pound' | 'g/kg';
+    volume: 'Pint' | 'Liter';
+  };
+  copyPhotosToGallery: boolean;
+  defaultView: 'Timeline' | 'List';
+}
+
+export interface DownloadItem {
+    id: string;
+    label: string;
+    description: string;
+    checked: boolean;
+}
+
+export type Permission = 'manage_users' | 'view_billing' | 'manage_billing' | 'view_projects' | 'edit_projects' | 'view_admin' | 'use_ai_tools' | 'manage_company';
+
+export type UserRole = 'SuperAdmin' | 'CompanyAdmin' | 'Technician';
+
+export interface User {
+    id: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    companyId: string;
+    permissions: Permission[];
+}
+
+export interface Company {
+    id: string;
+    name: string;
+    subscriptionPlan: 'Basic' | 'Pro' | 'Enterprise';
+    maxUsers: number;
+    isActive: boolean;
+}
+
+export type Tab = 
+    | 'dashboard' 
+    | 'losses' 
+    | 'downloads' 
+    | 'alerts' 
+    | 'more' 
+    | 'new-loss' 
+    | 'new-project' 
+    | 'settings' 
+    | 'loss-detail' 
+    | 'project' 
+    | 'line-items' 
+    | 'tic-sheet' 
+    | 'scanner' 
+    | 'equipment'
+    | 'photos'
+    | 'admin'
+    | 'reporting'
+    | 'billing';

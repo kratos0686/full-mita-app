@@ -1,31 +1,42 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { X, Camera, Ruler, Square, Check, RefreshCw, Zap, Plus, Cuboid, Layers, Share2, ArrowLeft, Maximize2, ScanLine, BrainCircuit, Orbit, Upload, Image as ImageIcon, Video, Edit, Undo, Trash2, WifiOff, Grid3X3, Camera as CameraIcon, Scan, Activity, Eye, Aperture, MousePointer2, Box, Sparkles, Target, Disc, Thermometer, List, TriangleAlert } from 'lucide-react';
+// Fixed the missing 'Height' icon export from lucide-react by using 'ArrowUpDown' as a valid alternative.
+import { X, Camera, Ruler, Square, Check, RefreshCw, Zap, Plus, Cuboid, Layers, Share2, ArrowLeft, Maximize2, ScanLine, BrainCircuit, Orbit, Upload, Image as ImageIcon, Video, Edit, Undo, Redo, Trash2, WifiOff, Grid3X3, Camera as CameraIcon, Scan, Activity, Eye, Aperture, MousePointer2, Box, Sparkles, Target, Disc, Thermometer, List, TriangleAlert, Droplets, ArrowUp, ArrowUpDown, Gauge } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { blobToBase64 } from '../utils/photoutils';
 import { RoomScan } from '../types';
 import { useAppContext } from '../context/AppContext';
+import { IntelligenceRouter } from '../services/IntelligenceRouter';
 
 interface ARScannerProps {
   onComplete: (data?: RoomScan) => void;
 }
 
 type Mode = 'scan' | 'processing' | 'result';
-type ScanMode = 'lidar' | 'photogrammetry' | 'splat' | 'object' | 'thermal';
+type ScanMode = 'lidar' | 'photogrammetry' | 'splat' | 'object';
 type View = '2d' | '3d';
+type ActionType = 'image' | 'corner';
+type HistoryItem = { type: ActionType; data: any };
 
 const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const processingCanvasRef = useRef<HTMLCanvasElement>(null);
-  const { isOnline } = useAppContext();
+  const { isOnline, accessToken } = useAppContext();
   
   // State
   const [mode, setMode] = useState<Mode>('scan');
   const [scanMode, setScanMode] = useState<ScanMode>('lidar');
   const [resultView, setResultView] = useState<View>('2d');
-  const [capturedImages, setCapturedImages] = useState<{ id: number; url: string; base64: string }[]>([]);
   
+  // Data State
+  const [capturedImages, setCapturedImages] = useState<{ id: number; url: string; base64: string }[]>([]);
+  const [corners, setCorners] = useState<{ x: number; y: number; id: number }[]>([]);
+  
+  // History State for Undo/Redo
+  const [actionLog, setActionLog] = useState<ActionType[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryItem[]>([]);
+
   // Sensor State
   const [imuData, setImuData] = useState<{ alpha: number, beta: number, gamma: number }>({ alpha: 0, beta: 0, gamma: 0 });
   const [isStable, setIsStable] = useState(true);
@@ -44,34 +55,19 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   const [aiActionableInsights, setAiActionableInsights] = useState<string[]>([]);
   const [aiMaterials, setAiMaterials] = useState<string[]>([]);
   const [aiRestorability, setAiRestorability] = useState<string>('');
+  const [aiWaterClass, setAiWaterClass] = useState<string>('');
   
   const [processingMessage, setProcessingMessage] = useState<string>("");
+
+  // Volumetric Data
+  const [ceilingHeight, setCeilingHeight] = useState<number>(8);
+  const [isSettingHeight, setIsSettingHeight] = useState(false);
 
   // 3D Interaction State
   const [rotation, setRotation] = useState({ x: 60, y: 0, z: 45 });
   const [zoom, setZoom] = useState(1);
   const isInteracting = useRef(false);
   const lastInteractionPos = useRef<{ x: number, y: number } | null>(null);
-
-  // Thermal LUT (Look-Up Table) - Ironbow Style
-  const thermalPalette = useMemo(() => {
-    const palette = [];
-    for (let i = 0; i < 256; i++) {
-      // Logic for Ironbow: Dark Blue -> Purple -> Red -> Orange -> Yellow -> White
-      let r, g, b;
-      if (i < 64) { // Blue to Purple
-        r = i * 2; g = 0; b = 255;
-      } else if (i < 128) { // Purple to Red
-        r = 128 + (i - 64) * 2; g = 0; b = 255 - (i - 64) * 4;
-      } else if (i < 192) { // Red to Orange/Yellow
-        r = 255; g = (i - 128) * 4; b = 0;
-      } else { // Yellow to White
-        r = 255; g = 255; b = (i - 192) * 4;
-      }
-      palette.push(`rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`);
-    }
-    return palette;
-  }, []);
 
   useEffect(() => {
     // Initialize Sensor Listeners
@@ -110,7 +106,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   useEffect(() => {
       if (autoCapture && mode === 'scan' && isStable) {
           const now = Date.now();
-          const delay = (scanMode === 'splat' || scanMode === 'photogrammetry' || scanMode === 'thermal') ? 800 : 2000;
+          const delay = (scanMode === 'splat' || scanMode === 'photogrammetry') ? 800 : 2000;
           if (now - lastCaptureTime.current > delay) {
               captureFrame();
               lastCaptureTime.current = now;
@@ -153,63 +149,8 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
         const scaleY = canvas.height / procCanvas.height;
         const time = Date.now();
 
-        // --- THERMAL IMAGING MODE ---
-        if (scanMode === 'thermal') {
-            // Draw thermal simulation
-            for (let y = 0; y < procCanvas.height; y++) {
-                for (let x = 0; x < procCanvas.width; x++) {
-                    const i = (y * procCanvas.width + x) * 4;
-                    // Calculate luminance as proxy for heat
-                    const luminance = Math.floor(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-                    
-                    ctx.fillStyle = thermalPalette[luminance];
-                    ctx.fillRect(x * scaleX, y * scaleY, scaleX + 1, scaleY + 1);
-                }
-            }
-
-            // HUD Overlays for Thermal Mode
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-            ctx.lineWidth = 1;
-            
-            // Thermal Scale bar on right
-            const scaleW = 12;
-            const scaleH = canvas.height * 0.4;
-            const scaleXPos = canvas.width - 30;
-            const scaleYPos = (canvas.height - scaleH) / 2;
-            
-            for(let i=0; i<scaleH; i++) {
-                const ratio = 1 - (i / scaleH);
-                ctx.fillStyle = thermalPalette[Math.floor(ratio * 255)];
-                ctx.fillRect(scaleXPos, scaleYPos + i, scaleW, 1);
-            }
-            ctx.strokeRect(scaleXPos, scaleYPos, scaleW, scaleH);
-            
-            // Text for scale
-            ctx.fillStyle = 'white';
-            ctx.font = '10px JetBrains Mono';
-            ctx.textAlign = 'right';
-            ctx.fillText("HOT", scaleXPos - 5, scaleYPos + 10);
-            ctx.fillText("COLD", scaleXPos - 5, scaleYPos + scaleH);
-
-            // Center spot temp simulation
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const centerLuminance = Math.floor(data[(32 * 64 + 32) * 4] * 0.299 + data[(32 * 64 + 32) * 4 + 1] * 0.587 + data[(32 * 64 + 32) * 4 + 2] * 0.114);
-            const simulatedTemp = (68 + (centerLuminance / 255) * 32).toFixed(1);
-
-            ctx.beginPath();
-            ctx.strokeStyle = 'white';
-            ctx.arc(cx, cy, 10, 0, Math.PI * 2);
-            ctx.stroke();
-            
-            ctx.textAlign = 'center';
-            ctx.font = 'bold 16px JetBrains Mono';
-            ctx.shadowColor = 'black'; ctx.shadowBlur = 4;
-            ctx.fillText(`${simulatedTemp}°F`, cx, cy - 20);
-            ctx.shadowBlur = 0;
-        }
         // --- GAUSSIAN SPLATS MODE ---
-        else if (scanMode === 'splat') {
+        if (scanMode === 'splat') {
             for (let y = 0; y < procCanvas.height; y += 2) {
                 for (let x = 0; x < procCanvas.width; x += 2) {
                     const i = (y * procCanvas.width + x) * 4;
@@ -327,7 +268,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
       }
 
       // --- Common UI: Reticle ---
-      if (scanMode !== 'object' && scanMode !== 'thermal') {
+      if (scanMode !== 'object') {
           const cx = canvas.width / 2;
           const cy = canvas.height / 2;
           ctx.strokeStyle = isStable ? (scanMode === 'splat' ? '#ec4899' : '#10b981') : 'rgba(255, 255, 255, 0.5)';
@@ -335,6 +276,33 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
           ctx.beginPath();
           ctx.moveTo(cx - 15, cy); ctx.lineTo(cx + 15, cy);
           ctx.moveTo(cx, cy - 15); ctx.lineTo(cx, cy + 15);
+          ctx.stroke();
+      }
+
+      // Visualize Corners
+      corners.forEach(corner => {
+          ctx.fillStyle = '#3b82f6';
+          ctx.beginPath();
+          ctx.arc(corner.x, corner.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+      });
+
+      // Connect corners with lines if we have more than 1
+      if (corners.length > 1) {
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(corners[0].x, corners[0].y);
+          for (let i = 1; i < corners.length; i++) {
+              ctx.lineTo(corners[i].x, corners[i].y);
+          }
+          // Close the loop if enough corners
+          if (corners.length > 2) {
+              ctx.lineTo(corners[0].x, corners[0].y);
+          }
           ctx.stroke();
       }
 
@@ -347,7 +315,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
     };
     render();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [mode, vizEnabled, isStable, scanMode, imuData, thermalPalette]);
+  }, [mode, vizEnabled, isStable, scanMode, imuData, corners]);
 
   const startCamera = async () => {
     try {
@@ -372,76 +340,125 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
     }
   };
 
+  const handleTap = (e: React.MouseEvent | React.TouchEvent) => {
+      if (mode !== 'scan') return;
+      // Allow marking corners mainly in LiDAR/Photogrammetry modes for floor planning
+      if (scanMode === 'object') return; 
+
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      const newCorner = { x, y, id: Date.now() };
+      setCorners(prev => [...prev, newCorner]);
+      
+      // Update History
+      setActionLog(prev => [...prev, 'corner']);
+      setRedoStack([]); // Clear redo on new action
+  };
+
   const captureFrame = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+    
+    // Create a high-quality canvas match for the video feed
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // If thermal mode, draw simulation into the actual capture
-    if (scanMode === 'thermal') {
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = 128; // Higher res than viz for capture
-        offCanvas.height = 128;
-        const offCtx = offCanvas.getContext('2d');
-        if (offCtx) {
-            offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
-            const frame = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
-            const data = frame.data;
-            const thermalCapture = ctx.createImageData(canvas.width, canvas.height);
-            const sX = canvas.width / offCanvas.width;
-            const sY = canvas.height / offCanvas.height;
-            
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            for (let y = 0; y < offCanvas.height; y++) {
-                for (let x = 0; x < offCanvas.width; x++) {
-                    const i = (y * offCanvas.width + x) * 4;
-                    const lum = Math.floor(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-                    ctx.fillStyle = thermalPalette[lum];
-                    ctx.fillRect(x * sX, y * sY, sX + 1, sY + 1);
-                }
-            }
-        }
-    } else {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    }
+    // Draw the current video frame
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
+    // Convert to Blob (JPEG 0.8 quality)
     const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
     if (!blob) return;
+    
+    // Generate Preview URL and Base64 string for AI processing
     const url = URL.createObjectURL(blob);
     const base64 = await blobToBase64(blob);
-    setCapturedImages(prev => [...prev, { id: Date.now(), url, base64 }]);
+    
+    const newImage = { id: Date.now(), url, base64 };
+    setCapturedImages(prev => [...prev, newImage]);
+    
+    // Update History for Undo/Redo
+    setActionLog(prev => [...prev, 'image']);
+    setRedoStack([]); // Clear redo on new action
+    
+    // Haptic Feedback
     if (navigator.vibrate) navigator.vibrate(50);
   };
 
+  const handleUndo = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (actionLog.length === 0) return;
+
+      const lastAction = actionLog[actionLog.length - 1];
+      const newActionLog = actionLog.slice(0, -1);
+      setActionLog(newActionLog);
+
+      if (lastAction === 'image') {
+          const newImages = [...capturedImages];
+          const removed = newImages.pop();
+          if (removed) {
+              setCapturedImages(newImages);
+              setRedoStack(prev => [...prev, { type: 'image', data: removed }]);
+          }
+      } else if (lastAction === 'corner') {
+          const newCorners = [...corners];
+          const removed = newCorners.pop();
+          if (removed) {
+              setCorners(newCorners);
+              setRedoStack(prev => [...prev, { type: 'corner', data: removed }]);
+          }
+      }
+  };
+
+  const handleRedo = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (redoStack.length === 0) return;
+
+      const lastRedo = redoStack[redoStack.length - 1];
+      const newRedoStack = redoStack.slice(0, -1);
+      setRedoStack(newRedoStack);
+      setActionLog(prev => [...prev, lastRedo.type]);
+
+      if (lastRedo.type === 'image') {
+          setCapturedImages(prev => [...prev, lastRedo.data]);
+      } else if (lastRedo.type === 'corner') {
+          setCorners(prev => [...prev, lastRedo.data]);
+      }
+  };
+
   const processScan = async () => {
-    if (capturedImages.length < 3) return;
+    if (capturedImages.length < 3 && corners.length < 3) return;
     setMode('processing');
     
     const msg = scanMode === 'object' ? "Forensic Material Analysis..." :
                 scanMode === 'splat' ? "Compiling 3D Point Cloud..." :
-                scanMode === 'thermal' ? "Analyzing Heat Signatures..." :
                 scanMode === 'photogrammetry' ? "Mapping Room Geometry..." :
                 "Processing Topology...";
     setProcessingMessage(msg);
     
-    if (!isOnline) {
+    if (!isOnline || !accessToken) {
          setTimeout(() => {
              setAiRoomLabel("Offline Scan");
              setAiDamageAssessment("Data stored locally. Sync to analyze.");
              setAiActionableInsights(["Connect to internet for AI analysis."]);
              setAiMaterials(["Unknown"]);
+             setAiWaterClass("Class 1 (Assumed)");
              setAiDimensions({ length: 12, width: 14, sqft: 168, height: 8 });
+             setCeilingHeight(8);
              setMode('result');
          }, 2000);
          return;
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const router = new IntelligenceRouter(accessToken);
         const imageParts = capturedImages.map(img => ({ inlineData: { mimeType: 'image/jpeg', data: img.base64 } }));
         
         let contextPrompt = "";
@@ -452,26 +469,24 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
             3. Determine Restorability: 'Restorable', 'Partially Restorable', or 'Non-Salvageable'.
             4. Provide 3 specific restoration steps (e.g., 'Cleaning', 'Ozone Treatment', 'Disposal').
             5. Create a wireframe SVG (viewBox 0 0 100 100).`;
-        } else if (scanMode === 'thermal') {
-            contextPrompt = `Perform a thermal imaging analysis of these project site photos. 
-            1. Identify potential moisture pockets (cold spots/blue-purple).
-            2. Identify heat leaks or electrical hotspots.
-            3. Estimate square footage of affected wall area.
-            4. Suggest mitigation steps based on thermal patterns.
-            5. Create an SVG floorplan highlighting hotspots.`;
         } else {
-            contextPrompt = `Perform an IICRC S500 Water Damage Assessment of this room.
-            1. Identify room type.
-            2. Classify Water Loss (Class 1-4) based on visible porosity and migration.
-            3. Detect affected materials (e.g., Drywall, Carpet, Hardwood).
-            4. Provide 3 prioritized mitigation actions (e.g., 'Extract water', 'Remove pad', 'Install containment').
-            5. Create a floorplan SVG (viewBox 0 0 100 100).`;
+            // Include corner data context if available
+            const cornersInfo = corners.length > 2 
+                ? `User marked ${corners.length} floor corners manually. Shape approximation available.` 
+                : "";
+
+            contextPrompt = `Perform an IICRC S500 Water Damage Assessment of this room. ${cornersInfo}
+            1. Identify room type and key dimensions.
+            2. **Visual Porosity Analysis**: Identify all porous materials (carpet, drywall, insulation) vs non-porous.
+            3. **Water Loss Class**: Estimate the Class (1-4) based on the quantity of water and expected rate of evaporation from porous materials visible.
+            4. Detect visible signs of mold or secondary damage.
+            5. Provide 3 prioritized mitigation actions (e.g., 'Extract water', 'Remove pad', 'Install containment').
+            6. Create a floorplan SVG (viewBox 0 0 100 100).`;
         }
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-pro-image-preview',
-            contents: { parts: [{ text: contextPrompt }, ...imageParts] },
-            config: {
+        const response = await router.execute('VISION_ANALYSIS', 
+            { parts: [{ text: contextPrompt }, ...imageParts] },
+            {
                 responseMimeType: 'application/json',
                 responseSchema: {
                     type: Type.OBJECT,
@@ -481,24 +496,27 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                         squareFootage: { type: Type.NUMBER },
                         roomLabel: { type: Type.STRING },
                         damageAssessment: { type: Type.STRING },
+                        estimatedWaterClass: { type: Type.STRING, description: "IICRC Loss Class 1-4" },
                         restorability: { type: Type.STRING },
                         actionableInsights: { type: Type.ARRAY, items: { type: Type.STRING } },
                         materials: { type: Type.ARRAY, items: { type: Type.STRING } },
                         floorPlanSvg: { type: Type.STRING }
                     },
-                    required: ['length', 'width', 'squareFootage', 'roomLabel', 'damageAssessment', 'floorPlanSvg', 'actionableInsights', 'materials']
+                    required: ['length', 'width', 'squareFootage', 'roomLabel', 'damageAssessment', 'floorPlanSvg', 'actionableInsights', 'materials', 'estimatedWaterClass']
                 }
             }
-        });
+        );
 
-        const result = JSON.parse(response.text);
+        const result = JSON.parse(response.text || '{}');
         setAiRoomLabel(result.roomLabel);
         setAiDamageAssessment(result.damageAssessment);
         setAiGeneratedSvg(result.floorPlanSvg);
         setAiActionableInsights(result.actionableInsights || []);
         setAiMaterials(result.materials || []);
         setAiRestorability(result.restorability || '');
+        setAiWaterClass(result.estimatedWaterClass || 'Unknown');
         setAiDimensions({ length: result.length, width: result.width, sqft: result.squareFootage, height: 8 });
+        setCeilingHeight(8); // Default to 8ft, technician can adjust
 
     } catch (error) {
         console.error("AI Analysis failed:", error);
@@ -514,7 +532,12 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
           scanId: `scan-${Date.now()}`,
           roomName: aiRoomLabel || 'New Scan',
           floorPlanSvg: aiGeneratedSvg,
-          dimensions: aiDimensions || { length: 0, width: 0, height: 8, sqft: 0 },
+          dimensions: { 
+            length: aiDimensions?.length || 0, 
+            width: aiDimensions?.width || 0, 
+            height: ceilingHeight, 
+            sqft: aiDimensions?.sqft || 0 
+          },
           placedPhotos: capturedImages.map((img, i) => ({
               id: img.id.toString(),
               url: img.url,
@@ -529,10 +552,14 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
 
   const resetScan = () => {
     setCapturedImages([]);
+    setCorners([]);
+    setActionLog([]);
+    setRedoStack([]);
     setAiDimensions(null);
     setAiGeneratedSvg('');
     setAiActionableInsights([]);
     setAiMaterials([]);
+    setCeilingHeight(8);
     setMode('scan');
   };
 
@@ -570,6 +597,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
   }
 
   const threeDAspectRatio = aiDimensions ? aiDimensions.length / aiDimensions.width : 1;
+  const roomVolume = (aiDimensions?.sqft || 0) * ceilingHeight;
 
   return (
     <div className="relative h-full bg-black overflow-hidden flex flex-col font-sans">
@@ -578,13 +606,16 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
           <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           
+          {/* Interaction Layer for Tapping Corners */}
+          <div className="absolute inset-0 z-10" onClick={handleTap} />
+
           <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between">
             <div className="p-4 pt-6 bg-gradient-to-b from-black/80 to-transparent flex flex-col space-y-4">
                <div className="flex justify-between items-start pointer-events-auto">
                    <div>
                        <div className="flex items-center space-x-2 mb-1">
-                           <div className={`w-2 h-2 rounded-full animate-pulse shadow-[0_0_10px] ${scanMode === 'thermal' ? 'bg-orange-500 shadow-orange-500' : scanMode === 'splat' ? 'bg-pink-500 shadow-pink-500' : 'bg-brand-cyan shadow-brand-cyan'}`} />
-                           <span className={`text-[10px] font-black uppercase tracking-widest ${scanMode === 'thermal' ? 'text-orange-500' : scanMode === 'splat' ? 'text-pink-500' : 'text-brand-cyan'}`}>Engine v3.3</span>
+                           <div className={`w-2 h-2 rounded-full animate-pulse shadow-[0_0_10px] ${scanMode === 'splat' ? 'bg-pink-500 shadow-pink-500' : 'bg-brand-cyan shadow-brand-cyan'}`} />
+                           <span className={`text-[10px] font-black uppercase tracking-widest ${scanMode === 'splat' ? 'text-pink-500' : 'text-brand-cyan'}`}>Engine v3.3</span>
                        </div>
                        <h2 className="text-white font-bold text-lg drop-shadow-md">Capture Environment</h2>
                    </div>
@@ -597,7 +628,6 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                
                <div className="flex space-x-2 overflow-x-auto no-scrollbar pointer-events-auto pb-2">
                    <button onClick={() => setScanMode('lidar')} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border transition-all ${scanMode === 'lidar' ? 'bg-brand-cyan text-slate-900 border-brand-cyan' : 'bg-black/40 text-white border-white/10'}`}>LiDAR</button>
-                   <button onClick={() => setScanMode('thermal')} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border transition-all ${scanMode === 'thermal' ? 'bg-orange-500 text-white border-orange-500' : 'bg-black/40 text-white border-white/10'}`}>Thermal</button>
                    <button onClick={() => setScanMode('photogrammetry')} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border transition-all ${scanMode === 'photogrammetry' ? 'bg-emerald-400 text-slate-900 border-emerald-400' : 'bg-black/40 text-white border-white/10'}`}>Photo</button>
                    <button onClick={() => setScanMode('splat')} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border transition-all ${scanMode === 'splat' ? 'bg-pink-500 text-white border-pink-500' : 'bg-black/40 text-white border-white/10'}`}>Splat</button>
                    <button onClick={() => setScanMode('object')} className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border transition-all ${scanMode === 'object' ? 'bg-amber-500 text-slate-900 border-amber-500' : 'bg-black/40 text-white border-white/10'}`}>Object</button>
@@ -614,23 +644,48 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                        <div className="text-xs text-slate-400 font-mono">Pitch: {Math.round(imuData.beta)}°</div>
                    </div>
                    <div className="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2 border border-white/10 flex flex-col items-center">
-                       <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Frames</span>
-                       <span className="text-xl font-black text-white">{capturedImages.length}</span>
+                       <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Points</span>
+                       <span className="text-xl font-black text-white">{capturedImages.length + corners.length}</span>
                    </div>
                </div>
 
-               <div className="flex space-x-4">
-                   <button onClick={captureFrame} className="flex-1 bg-white/10 backdrop-blur-md text-white py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 active:bg-white/20 transition-all border border-white/10">
+               <div className="flex space-x-4 items-center">
+                   {/* Undo Button */}
+                   <button 
+                       onClick={handleUndo} 
+                       disabled={actionLog.length === 0}
+                       className="p-4 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                   >
+                       <Undo size={20} />
+                   </button>
+
+                   {/* Main Capture Button */}
+                   <button onClick={captureFrame} className="flex-1 bg-white/10 backdrop-blur-md text-white py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 active:bg-white/20 transition-all border border-white/10 shadow-lg">
                        <div className="w-12 h-12 rounded-full border-4 border-white flex items-center justify-center">
                            <div className="w-10 h-10 bg-white rounded-full active:scale-90 transition-transform" />
                        </div>
                    </button>
-                   {capturedImages.length >= 3 && (
+
+                   {/* Redo Button */}
+                   <button 
+                       onClick={handleRedo}
+                       disabled={redoStack.length === 0}
+                       className="p-4 bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 text-white hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                   >
+                       <Redo size={20} />
+                   </button>
+
+                   {/* Process Button (Conditional) */}
+                   {(capturedImages.length >= 3 || corners.length >= 3) && (
                        <button onClick={processScan} className="flex-1 py-4 rounded-2xl font-bold flex items-center justify-center space-x-2 transition-all shadow-lg bg-brand-cyan text-slate-900 animate-in slide-in-from-right">
                            <Cuboid size={20} />
-                           <span>Process {scanMode === 'object' ? 'Mesh' : 'Room'}</span>
+                           <span>Process</span>
                        </button>
                    )}
+               </div>
+               
+               <div className="text-center mt-2 text-[9px] text-gray-400 font-bold uppercase tracking-widest opacity-60">
+                   Tap screen to mark corners • Capture frames for depth
                </div>
             </div>
           </div>
@@ -640,7 +695,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
       {mode === 'processing' && (
         <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center z-50 p-8 text-center">
             <div className="relative mb-8">
-                <div className={`w-32 h-32 border-4 rounded-full animate-spin ${scanMode === 'thermal' ? 'border-orange-500/20 border-t-orange-500' : scanMode === 'splat' ? 'border-pink-500/20 border-t-pink-500' : 'border-brand-cyan/20 border-t-brand-cyan'}`} />
+                <div className={`w-32 h-32 border-4 rounded-full animate-spin ${scanMode === 'splat' ? 'border-pink-500/20 border-t-pink-500' : 'border-brand-cyan/20 border-t-brand-cyan'}`} />
                 <BrainCircuit size={48} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white animate-pulse" />
             </div>
             <h3 className="text-white font-black text-2xl mb-2">AI Processing</h3>
@@ -655,7 +710,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                   <button onClick={resetScan} className="p-2 -ml-2 text-slate-400 hover:text-white"><ArrowLeft size={24} /></button>
                   <div>
                       <h2 className="font-bold text-white text-lg">{aiRoomLabel || 'Result'}</h2>
-                      <div className="text-[10px] font-black text-brand-cyan uppercase tracking-widest">{aiDimensions.sqft ? `${aiDimensions.sqft.toFixed(1)} SQ FT` : 'Object Scanned'}</div>
+                      <div className="text-[10px] font-black text-brand-cyan uppercase tracking-widest">{aiDimensions.sqft ? `${aiDimensions.sqft.toFixed(1)} SQ FT • ${ceilingHeight.toFixed(1)}' CEILING` : 'Object Scanned'}</div>
                   </div>
               </div>
               <div className="flex bg-slate-800 rounded-lg p-1 border border-white/5">
@@ -667,14 +722,66 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
           <div className="flex-1 relative bg-slate-900 overflow-hidden flex flex-col md:flex-row items-stretch p-4 gap-4">
               {/* Insights Panel */}
               <div className="w-full md:w-80 flex flex-col gap-4 overflow-y-auto order-2 md:order-1">
+                  
+                  {/* Vertical Dimension Card (New Feature) */}
+                  <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-indigo-500/30 shadow-xl ring-1 ring-indigo-500/20">
+                      <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center space-x-2">
+                              <ArrowUpDown className="text-indigo-400" size={16} />
+                              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Vertical Dimension</h4>
+                          </div>
+                          <button onClick={() => setIsSettingHeight(!isSettingHeight)} className="text-[10px] font-bold text-indigo-400 hover:text-white transition-colors">Adjust</button>
+                      </div>
+
+                      <div className="space-y-4">
+                          <div className="flex justify-between items-end">
+                              <div>
+                                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-1">Ceiling Height</span>
+                                  <div className="text-2xl font-black text-white">{ceilingHeight.toFixed(1)}<span className="text-sm font-medium text-slate-500 ml-1">ft</span></div>
+                              </div>
+                              <div className="text-right">
+                                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-1">Room Volume</span>
+                                  <div className="text-xl font-black text-emerald-400">{roomVolume.toFixed(0)}<span className="text-sm font-medium text-slate-500 ml-1">cu ft</span></div>
+                              </div>
+                          </div>
+                          
+                          {isSettingHeight && (
+                              <div className="space-y-2 animate-in slide-in-from-top-2">
+                                  <input 
+                                      type="range" 
+                                      min="4" max="20" step="0.5" 
+                                      value={ceilingHeight} 
+                                      onChange={(e) => setCeilingHeight(parseFloat(e.target.value))}
+                                      className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                  />
+                                  <div className="flex justify-between text-[8px] font-black text-slate-500 uppercase tracking-tighter">
+                                      <span>4ft</span>
+                                      <span>12ft</span>
+                                      <span>20ft</span>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+
+                  {/* Forensic Assessment Card */}
                   <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-xl">
                       <div className="flex items-center space-x-2 mb-3">
                           <BrainCircuit size={16} className="text-brand-cyan" />
-                          <h4 className="text-xs font-bold text-white uppercase tracking-wider">Assessment</h4>
+                          <h4 className="text-xs font-bold text-white uppercase tracking-wider">Forensic Assessment</h4>
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed">{aiDamageAssessment}</p>
+                      
+                      {aiWaterClass && (
+                          <div className="mb-3 flex items-center justify-between p-2 bg-white/5 rounded-lg border border-white/10">
+                              <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Estimated Class</span>
+                              <span className={`text-xs font-black ${aiWaterClass.includes('4') ? 'text-red-400' : 'text-blue-400'}`}>{aiWaterClass}</span>
+                          </div>
+                      )}
+
+                      <p className="text-xs text-slate-400 leading-relaxed mb-3">{aiDamageAssessment}</p>
+                      
                       {aiRestorability && (
-                          <div className={`mt-3 py-1.5 px-3 rounded-lg text-xs font-bold text-center uppercase tracking-wide border ${aiRestorability.includes('Non') ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                          <div className={`py-1.5 px-3 rounded-lg text-xs font-bold text-center uppercase tracking-wide border ${aiRestorability.includes('Non') ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
                               {aiRestorability}
                           </div>
                       )}
@@ -694,20 +801,6 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                           ))}
                       </ul>
                   </div>
-                  
-                  {aiMaterials.length > 0 && (
-                      <div className="bg-slate-800/80 backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-xl">
-                          <div className="flex items-center space-x-2 mb-3">
-                              <Box size={16} className="text-amber-400" />
-                              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Materials</h4>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                              {aiMaterials.map((mat, idx) => (
-                                  <span key={idx} className="px-2 py-1 bg-white/5 rounded-md text-[10px] text-slate-300 border border-white/10">{mat}</span>
-                              ))}
-                          </div>
-                      </div>
-                  )}
               </div>
 
               {/* Visualization Container */}
@@ -721,15 +814,19 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
                         onTouchStart={handleInteractionStart} onTouchMove={handleInteractionMove} onTouchEnd={handleInteractionEnd}
                         onWheel={handleWheel}
                       >
-                          <div className="relative transition-transform duration-75" style={{ transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg) scale(${zoom})`, transformStyle: 'preserve-3d', width: '12rem', height: `${12 * threeDAspectRatio}rem` }}>
-                              {/* Floor */}
-                              <div className="absolute inset-0 bg-slate-700 border-2 border-brand-cyan/50 opacity-80" style={{ transform: 'translateZ(-4rem)' }}>
+                          {/* Dynamic Extrusion Logic: Ceiling height determines the translateZ offset and wall height */}
+                          <div className="relative transition-all duration-300" style={{ transform: `rotateX(${rotation.x}deg) rotateY(${rotation.y}deg) rotateZ(${rotation.z}deg) scale(${zoom})`, transformStyle: 'preserve-3d', width: '12rem', height: `${12 * threeDAspectRatio}rem` }}>
+                              {/* Floor - Positioned at bottom based on adjusted ceilingHeight */}
+                              <div className="absolute inset-0 bg-slate-700 border-2 border-brand-cyan/50 opacity-80" style={{ transform: `translateZ(-${ceilingHeight / 2}rem)` }}>
                                   <div className="absolute inset-0 opacity-20" style={{backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%), linear-gradient(-45deg, #000 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #000 75%), linear-gradient(-45deg, transparent 75%, #000 75%)', backgroundSize: '20px 20px'}} />
                               </div>
-                              {/* Walls (Wireframe style) */}
-                              <div className="absolute inset-0 border-2 border-brand-cyan/30" style={{ transform: 'translateZ(4rem)' }} />
-                              <div className="absolute top-0 w-full border-t-2 border-brand-cyan/30" style={{ transform: 'rotateX(90deg) translateZ(6rem)', height: '8rem' }} />
-                              <div className="absolute bottom-0 w-full border-b-2 border-brand-cyan/30" style={{ transform: 'rotateX(-90deg) translateZ(6rem)', height: '8rem' }} />
+                              
+                              {/* Ceiling Wireframe - Positioned at top */}
+                              <div className="absolute inset-0 border-2 border-brand-cyan/30 bg-indigo-500/5" style={{ transform: `translateZ(${ceilingHeight / 2}rem)` }} />
+                              
+                              {/* Dynamic Walls - height and position linked to ceilingHeight */}
+                              <div className="absolute top-0 w-full border-x-2 border-brand-cyan/30" style={{ transform: `rotateX(90deg) translateZ(${6 * threeDAspectRatio}rem)`, height: `${ceilingHeight}rem`, top: `-${ceilingHeight/2}rem` }} />
+                              <div className="absolute bottom-0 w-full border-x-2 border-brand-cyan/30" style={{ transform: `rotateX(-90deg) translateZ(${6 * threeDAspectRatio}rem)`, height: `${ceilingHeight}rem`, bottom: `-${ceilingHeight/2}rem` }} />
                           </div>
                       </div>
                   )}
@@ -739,7 +836,7 @@ const ARScanner: React.FC<ARScannerProps> = ({ onComplete }) => {
           <div className="bg-slate-900 p-4 flex flex-col items-center justify-center border-t border-white/10">
               <button onClick={handleComplete} className="w-full max-w-xs py-4 bg-brand-cyan text-slate-900 rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all">
                   <Check size={20} />
-                  <span>Save Scan & Continue</span>
+                  <span>Save Volumetric Model</span>
               </button>
           </div>
         </div>

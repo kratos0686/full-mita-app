@@ -1,126 +1,123 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, BrainCircuit, Navigation, FilePlus2, WifiOff } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { Search, MoreVertical, MapPin, Calendar, Circle, Filter, Clock, CloudOff, FolderOpen } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { getProjects } from '../data/mockApi';
-import { AIProjectData } from '../types';
-import SkeletonLoader from './SkeletonLoader';
+import { LossFile } from '../types'; // Updated type import
 
 const Dashboard: React.FC = () => {
-  const { setSelectedProjectId, setActiveTab, isOnline } = useAppContext();
-  const [aiBriefing, setAiBriefing] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [aiProjects, setAiProjects] = useState<AIProjectData[]>([]);
-  const [nearbyResources, setNearbyResources] = useState<any[]>([]);
-  const [isFindingResources, setIsFindingResources] = useState(false);
+  const { setSelectedProjectId, setActiveTab, currentUser } = useAppContext();
+  const [losses, setLosses] = useState<LossFile[]>([]);
+  const [filter, setFilter] = useState<'Recent' | 'Not Exported' | 'All'>('Recent');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    const fetchProjectsAndAnalysis = async () => {
-      setIsLoading(true);
-      const initialProjects = await getProjects();
-      
-      if (isOnline) {
-          try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            // Using gemini-3-flash-preview for fast AI responses
-            const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: `Analyze: ${JSON.stringify(initialProjects.map(p => ({id: p.id, progress: p.progress})))}. Provide brief overallBriefing and analyzedProjects array.`,
-              config: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                  type: Type.OBJECT,
-                  properties: {
-                    overallBriefing: { type: Type.STRING },
-                    analyzedProjects: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, aiSummary: { type: Type.STRING }, aiAlert: { type: Type.OBJECT, properties: { isAlert: { type: Type.BOOLEAN }, reason: { type: Type.STRING } } }, priority: { type: Type.NUMBER } } } }
-                  },
-                  required: ['overallBriefing', 'analyzedProjects']
-                }
-              }
-            });
-            const result = JSON.parse(response.text || '{}');
-            setAiBriefing(result.overallBriefing || "Overview ready.");
-            setAiProjects(initialProjects.map(p => ({ ...p, ...result.analyzedProjects?.find((ap: any) => ap.id === p.id) } as AIProjectData)).sort((a,b) => (b.priority || 0) - (a.priority || 0)));
-          } catch (err) { 
-              console.error(err); 
-              // Fallback for AI failure but online
-              setAiBriefing("System operational. AI analysis temporarily unavailable.");
-              setAiProjects(initialProjects.map(p => ({...p, aiSummary: 'Analysis pending...', aiAlert: {isAlert: false, reason: ''}, priority: 1} as AIProjectData)));
-          } finally { 
-              setIsLoading(false); 
-          }
-      } else {
-          // Offline Fallback
-          setAiBriefing("Offline Mode Active. Displaying locally cached project data.");
-          setAiProjects(initialProjects.map(p => ({...p, aiSummary: 'Local Data Only', aiAlert: {isAlert: false, reason: ''}, priority: 1} as AIProjectData)));
-          setIsLoading(false);
+    const fetchLosses = async () => {
+      if (currentUser?.companyId) {
+          const data = await getProjects(currentUser.companyId);
+          setLosses(data as LossFile[]);
       }
     };
-    fetchProjectsAndAnalysis();
-  }, [isOnline]);
+    fetchLosses();
+  }, [currentUser]);
 
-  const findNearbySuppliers = async () => {
-    if (!isOnline) return;
-    setIsFindingResources(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Maps Grounding using gemini-2.5-flash
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: "Find 3 hardware stores and water damage equipment rental centers nearby.",
-        config: { tools: [{ googleMaps: {} }] }
-      });
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      setNearbyResources(chunks.filter((c: any) => c.maps).map((c: any) => c.maps));
-    } catch (err) { console.error(err); } finally { setIsFindingResources(false); }
+  const handleSelectLoss = (id: string) => {
+    setSelectedProjectId(id);
+    setActiveTab('loss-detail');
   };
-  
-  const handleProjectSelect = (projectId: string) => {
-    setSelectedProjectId(projectId);
-    setActiveTab('project');
-  };
+
+  const filteredLosses = losses.filter(l => {
+      const matchesSearch = l.client.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            l.address.toLowerCase().includes(searchTerm.toLowerCase());
+      if (filter === 'Recent') return matchesSearch; // Simply return all for recent in mock
+      return matchesSearch;
+  });
+
+  const FILTER_TABS = [
+      { id: 'Recent', icon: <Clock size={20} />, label: 'Recent' },
+      { id: 'Not Exported', icon: <CloudOff size={20} />, label: 'Pending' },
+      { id: 'All', icon: <FolderOpen size={20} />, label: 'All' }
+  ] as const;
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      <section className="glass-card p-6 rounded-[2.5rem] relative overflow-hidden">
-        <div className="flex items-center space-x-2 mb-3"><div className={`w-8 h-8 ${isOnline ? 'bg-brand-indigo' : 'bg-blue-600'} rounded-xl flex items-center justify-center text-white shadow-lg`}><BrainCircuit size={18} /></div><span className={`text-[10px] font-black ${isOnline ? 'text-brand-indigo' : 'text-blue-700'} uppercase tracking-widest`}>AI Technical Briefing</span></div>
-        {isLoading ? <SkeletonLoader count={2} /> : <p className="text-blue-300 text-sm leading-relaxed font-bold">"{aiBriefing}"</p>}
-      </section>
+    <div className="bg-[#0078d4] min-h-screen flex flex-col">
+      {/* Header */}
+      <header className="bg-[#0078d4] text-white px-4 pt-4 pb-2 sticky top-0 z-10 shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+            <div className="w-10 h-10 bg-white text-[#0078d4] rounded-full flex items-center justify-center font-bold text-lg shadow-sm">RM</div>
+            <h1 className="text-xl font-semibold">Restoration</h1>
+            <button className="p-2 text-white/90 hover:bg-white/10 rounded-full"><MoreVertical size={20} /></button>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+                type="text" 
+                placeholder="Search..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full bg-white rounded-lg py-2.5 pl-10 pr-4 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-white/50"
+            />
+            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><Filter size={16} /></button>
+        </div>
 
-      <section className="glass-panel text-white p-6 rounded-[2.5rem] relative overflow-hidden">
-        <div className="flex items-center space-x-2 mb-4"><Navigation size={14} className={isOnline ? 'text-emerald-400' : 'text-blue-700'} /><span className={`text-[10px] font-black uppercase tracking-widest ${isOnline ? 'text-emerald-400' : 'text-blue-700'}`}>{isOnline ? 'Grounding Active' : 'Grounding Offline'}</span></div>
-        <h3 className="text-xl font-black text-white mb-4">Nearby Support</h3>
-        {nearbyResources.length > 0 ? (
-          <div className="space-y-3">
-            {nearbyResources.map((res, i) => (
-              <a key={i} href={res.uri} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between bg-white/10 p-4 rounded-2xl hover:bg-white/20 transition-colors">
-                <span className="text-xs font-bold">{res.title}</span>
-                <ChevronRight size={14} />
-              </a>
+        {/* Symbol-Based Filter Navigation */}
+        <div className="flex justify-center space-x-8 pb-2">
+            {FILTER_TABS.map(t => (
+                <button 
+                    key={t.id} 
+                    onClick={() => setFilter(t.id as any)}
+                    className={`flex flex-col items-center space-y-1 group relative`}
+                    title={t.label}
+                >
+                    <div className={`p-3 rounded-2xl transition-all duration-300 ${filter === t.id ? 'bg-white text-[#0078d4] shadow-lg scale-110' : 'bg-white/10 text-blue-100 hover:bg-white/20'}`}>
+                        {t.icon}
+                    </div>
+                    <div className={`absolute -bottom-4 text-[9px] font-bold uppercase tracking-widest transition-opacity duration-300 ${filter === t.id ? 'opacity-100 text-white' : 'opacity-0'}`}>
+                        {t.label}
+                    </div>
+                </button>
             ))}
-          </div>
-        ) : (
-          <button onClick={findNearbySuppliers} className={`w-full py-4 rounded-2xl font-black text-xs uppercase transition-colors ${isOnline ? 'bg-white text-gray-900 hover:bg-slate-200' : 'bg-gray-700 text-blue-600 cursor-not-allowed'}`} disabled={isFindingResources || !isOnline}>
-            {!isOnline ? 'Unavailable Offline' : isFindingResources ? 'Locating Field Assets...' : 'Find Suppliers & Labs'}
-          </button>
-        )}
-      </section>
+        </div>
+      </header>
 
-      <section className="pb-4">
-        <div className="flex items-center justify-between mb-4 px-1"><h2 className="font-black text-white tracking-tight">AI Prioritized Portfolio</h2><button onClick={() => setActiveTab('new-project')} className="flex items-center space-x-2 bg-brand-cyan/10 text-brand-cyan px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border border-brand-cyan/20"><FilePlus2 size={12}/><span>New</span></button></div>
-        {isLoading ? <SkeletonLoader height="150px" count={3} borderRadius="2rem"/> : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {aiProjects.map((p) => (
-              <div key={p.id} onClick={() => handleProjectSelect(p.id)} className="glass-card p-5 rounded-[2rem] transition-all cursor-pointer group hover:border-brand-cyan/50 hover:ring-4 hover:ring-brand-cyan/10 hover:scale-[1.02] hover:bg-white/5">
-                <h3 className="font-black text-white group-hover:text-brand-cyan transition-colors">{p.client}</h3>
-                <div className="text-[10px] text-blue-600 mt-1 uppercase font-bold tracking-widest">{p.address}</div>
-                <div className="mt-4 bg-white/5 p-3 rounded-xl text-[10px] font-bold text-blue-400">{p.aiSummary}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* List Content */}
+      <div className="flex-1 bg-gray-100 p-2 overflow-y-auto pb-24 pt-4">
+        {filteredLosses.map((loss) => (
+            <div key={loss.id} onClick={() => handleSelectLoss(loss.id)} className="bg-white rounded-lg shadow-sm mb-2 overflow-hidden active:scale-[0.99] transition-transform">
+                <div className="flex">
+                    {/* Thumbnail Image */}
+                    <div className="w-24 h-24 bg-gray-200 relative shrink-0">
+                        {loss.rooms[0]?.photos[0] ? (
+                            <img src={loss.rooms[0].photos[0].url} className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400"><MapPin /></div>
+                        )}
+                        <div className="absolute bottom-0 left-0 w-full bg-black/60 text-white text-[9px] px-1 py-0.5 font-bold uppercase tracking-wider truncate flex justify-center">
+                            {loss.currentStage || 'Intake'}
+                        </div>
+                    </div>
+                    
+                    {/* Details */}
+                    <div className="p-3 flex-1 flex flex-col justify-center min-w-0">
+                        <h3 className="text-base font-bold text-gray-900 truncate">{loss.client}</h3>
+                        <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">Client Display Name #: {loss.id}</p>
+                        <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">Claim #: {loss.policyNumber}</p>
+                        <p className="text-xs text-gray-600 mt-1 truncate">{loss.address}</p>
+                        <div className="mt-2 text-[10px] text-gray-400 flex items-center">
+                            Last Update: {new Date().toLocaleDateString()}
+                        </div>
+                    </div>
+                    
+                    {/* Chevron */}
+                    <div className="flex items-center justify-center px-2 text-blue-400">
+                        <div className="bg-blue-50 p-1 rounded-full"><MoreVertical size={16} /></div>
+                    </div>
+                </div>
+            </div>
+        ))}
+      </div>
     </div>
   );
 };

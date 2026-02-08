@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Project, ComplianceCheck } from '../types';
 import { ShieldCheck, Microscope, CheckCircle2, AlertTriangle, Clock, BrainCircuit, Loader2, Sparkles, X, WifiOff } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext';
 
 interface ComplianceChecklistProps {
     project: Project;
+    onUpdate?: (updates: Partial<Project>) => void;
 }
 
 const AsbestosStatusBadge: React.FC<{ status: Project['complianceChecks']['asbestos'] }> = ({ status }) => {
@@ -25,24 +26,36 @@ const AsbestosStatusBadge: React.FC<{ status: Project['complianceChecks']['asbes
     );
 };
 
-const ComplianceChecklist: React.FC<ComplianceChecklistProps> = ({ project }) => {
-    const { isOnline } = useAppContext();
+const ComplianceChecklist: React.FC<ComplianceChecklistProps> = ({ project, onUpdate }) => {
+    const { isOnline, accessToken } = useAppContext();
     const [checklist, setChecklist] = useState<ComplianceCheck[]>(project.complianceChecks.aiChecklist);
     const [analyzingId, setAnalyzingId] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        setChecklist(project.complianceChecks.aiChecklist);
+    }, [project.complianceChecks.aiChecklist]);
     
     const toggleCheck = (checkId: string) => {
-        setChecklist(prev => 
-            prev.map(c => c.id === checkId ? { ...c, isCompleted: !c.isCompleted } : c)
-        );
+        const updatedList = checklist.map(c => c.id === checkId ? { ...c, isCompleted: !c.isCompleted } : c);
+        setChecklist(updatedList);
+        
+        if (onUpdate) {
+            onUpdate({
+                complianceChecks: {
+                    ...project.complianceChecks,
+                    aiChecklist: updatedList
+                }
+            });
+        }
     };
 
     const handleGetSuggestion = async (e: React.MouseEvent, checkId: string, text: string) => {
         e.stopPropagation();
-        if (!isOnline) return;
+        if (!isOnline || !accessToken) return;
         setAnalyzingId(checkId);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: accessToken }); // Using OAuth Token
             const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: `For the water mitigation compliance check: "${text}", provide a very brief (1 sentence) suggestion on what evidence or documentation is typically needed to verify this step is complete.`,

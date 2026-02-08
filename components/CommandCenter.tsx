@@ -27,7 +27,7 @@ const navigateToTabDeclaration: FunctionDeclaration = {
 };
 
 const CommandCenter: React.FC<CommandCenterProps> = ({ isOpen, onClose }) => {
-  const { setActiveTab } = useAppContext();
+  const { setActiveTab, accessToken } = useAppContext();
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<{ cmd: string; result: string; type: 'cmd' | 'res' | 'sys' }[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -38,19 +38,19 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ isOpen, onClose }) => {
   }, [history]);
 
   const executeCommand = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !accessToken) return;
     const cmd = input;
     setInput('');
     setHistory(prev => [...prev, { cmd, result: '', type: 'cmd' }]);
     setIsProcessing(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: accessToken });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: cmd,
         config: {
-          systemInstruction: "You are the MitigationAI Field Terminal. Interpret commands to navigate the app or manage project data. Support psychrometric calculation requests by interpreting intent.",
+          systemInstruction: "You are the Field Terminal. Interpret commands to navigate the app or manage project data. Support psychrometric calculation requests by interpreting intent.",
           tools: [{ functionDeclarations: [navigateToTabDeclaration] }],
         }
       });
@@ -72,7 +72,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ isOpen, onClose }) => {
         setHistory(prev => [...prev, { cmd: '', result: response.text, type: 'res' }]);
       }
     } catch (error) {
-      setHistory(prev => [...prev, { cmd: '', result: 'KERNEL_FAULT: OAUTH_OR_CORE_ISSUE', type: 'res' }]);
+      setHistory(prev => [...prev, { cmd: '', result: 'KERNEL_FAULT: AI_SERVICE_UNAVAILABLE', type: 'res' }]);
     } finally {
       setIsProcessing(false);
     }
@@ -83,13 +83,13 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-[110] bg-gray-950/98 backdrop-blur-xl flex flex-col p-4 animate-in fade-in zoom-in duration-300">
       <div className="flex justify-between items-center mb-6 text-indigo-400 font-mono text-[10px] border-b border-white/5 pb-4">
-        <div className="flex items-center space-x-3"><div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)]"><Cpu size={14} className="animate-pulse" /></div><span className="font-black uppercase tracking-widest">Mitigation_Kernel_v2.3</span></div>
+        <div className="flex items-center space-x-3"><div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)]"><Cpu size={14} className="animate-pulse" /></div><span className="font-black uppercase tracking-widest">System_Kernel_v2.3</span></div>
         <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full transition-colors text-white"><X size={20} /></button>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto font-mono text-[12px] space-y-4 mb-6 no-scrollbar px-2">
         <div className="text-gray-600 italic opacity-60 font-medium tracking-tight">
-          // MitigationAI FIELD OS v2.3<br/>
+          // FIELD OS v2.3<br/>
           // Try: "show my photos", "calculate GPP", "navigate to logs"
         </div>
         {history.map((h, i) => (

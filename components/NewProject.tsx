@@ -1,123 +1,129 @@
 
 import React, { useState } from 'react';
-import { FilePlus2, User, MapPin, ShieldCheck, Check, Loader2, Navigation, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { addProject } from '../data/mockApi';
-import { GoogleGenAI } from '@google/genai';
+import { WaterCategory, LossClass } from '../types';
 
 const NewProject: React.FC = () => {
-    const { setActiveTab, setSelectedProjectId } = useAppContext();
-    const [client, setClient] = useState('');
-    const [address, setAddress] = useState('');
-    const [insurance, setInsurance] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isVerifying, setIsVerifying] = useState(false);
-    const [verificationResult, setVerificationResult] = useState<{ status: 'success' | 'error', message: string } | null>(null);
+    const { setActiveTab, setSelectedProjectId, currentUser } = useAppContext();
+    const [isSaving, setIsSaving] = useState(false);
+    const [lossInfo, setLossInfo] = useState({
+        location: '',
+        lossDate: new Date().toISOString().slice(0, 16),
+        clientName: '',
+        claimNumber: '',
+        insurance: '',
+        jobType: 'Water'
+    });
 
-    const handleAddressBlur = async () => {
-        if (!address.trim()) return;
-        setIsVerifying(true);
-        setVerificationResult(null);
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
-                contents: `Verify and format this address: ${address}`,
-                config: { tools: [{ googleMaps: {} }] }
-            });
-            const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-            const mapInfo = groundingChunks.find((c: any) => c.maps)?.maps;
-
-            if (mapInfo && mapInfo.title) {
-                setAddress(mapInfo.title);
-                setVerificationResult({ status: 'success', message: 'Address verified via Google Maps.' });
-            } else {
-                 setVerificationResult({ status: 'error', message: 'Could not verify address. Please check and try again.' });
-            }
-        } catch (err) {
-            console.error(err);
-            setVerificationResult({ status: 'error', message: 'AI verification service failed.' });
-        } finally {
-            setIsVerifying(false);
+    const handleSubmit = async () => {
+        if (!currentUser?.companyId || !lossInfo.clientName || !lossInfo.location) {
+            alert("Please fill in required fields (Location, Client Name).");
+            return;
         }
-    };
-    
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!client || !address || !insurance) return;
-        setIsSubmitting(true);
         
-        const newProjectData = {
-            client,
-            address,
-            insurance,
-            status: 'Initial Assessment',
-            startDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-            logs: 'No logs yet.',
-            clientEmail: 'TBD',
-            clientPhone: 'TBD',
-            policyNumber: 'TBD',
-            adjuster: 'TBD',
-            estimate: 'TBD'
-        };
+        setIsSaving(true);
+        const newLoss = await addProject({
+            client: lossInfo.clientName,
+            address: lossInfo.location,
+            lossDate: lossInfo.lossDate,
+            insurance: lossInfo.insurance,
+            claimNumber: lossInfo.claimNumber,
+            status: 'New Intake',
+            currentStage: 'Intake',
+            waterCategory: WaterCategory.CAT_1, // Default to clean water
+            lossClass: LossClass.CLASS_1, // Default to least affected
+        }, currentUser.companyId);
 
-        try {
-            const createdProject = await addProject(newProjectData);
-            setSelectedProjectId(createdProject.id);
-            setActiveTab('project');
-        } catch (error) {
-            console.error("Failed to create project", error);
-        } finally {
-            setIsSubmitting(false);
-        }
+        setSelectedProjectId(newLoss.id);
+        setActiveTab('loss-detail');
+        setIsSaving(false);
     };
-    
-    const isFormValid = client.trim() && address.trim() && insurance.trim();
 
     return (
-        <div className="p-4 space-y-6 animate-in fade-in duration-500">
-            <header className="flex items-center space-x-3">
-                <button onClick={() => setActiveTab('dashboard')} className="p-2 -ml-2 text-gray-400 hover:text-gray-900"><ArrowLeft size={24} /></button>
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-900">New Project Intake</h2>
-                    <p className="text-sm text-gray-500">Create a new mitigation file.</p>
+        <div className="flex flex-col h-full bg-gray-100">
+            <header className="bg-[#0078d4] text-white py-4 px-4 flex justify-between items-center shadow-md">
+                <div className="flex items-center space-x-4">
+                    <button onClick={() => setActiveTab('losses')}><ArrowLeft size={24} /></button>
+                    <h1 className="text-xl font-bold">New Loss Intake</h1>
                 </div>
+                <button 
+                    onClick={handleSubmit} 
+                    disabled={isSaving}
+                    className="bg-white text-[#0078d4] px-4 py-1.5 rounded-full text-sm font-bold flex items-center space-x-2 disabled:opacity-70"
+                >
+                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    <span>{isSaving ? 'Creating...' : 'Start Job'}</span>
+                </button>
             </header>
-            
-            <form onSubmit={handleSubmit} className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-6">
-                <div className="relative">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center pl-1 mb-2"><User size={12} className="mr-1" /> Client Name</label>
-                    <input type="text" value={client} onChange={(e) => setClient(e.target.value)} placeholder="e.g., John Doe" className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-400 transition shadow-inner" />
-                </div>
 
-                <div className="relative">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center pl-1 mb-2"><MapPin size={12} className="mr-1" /> Property Address</label>
-                    <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} onBlur={handleAddressBlur} placeholder="e.g., 123 Main St, Anytown, USA" className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-400 transition shadow-inner" />
-                    <div className="absolute right-3 top-10">
-                        {isVerifying ? <Loader2 size={16} className="text-gray-400 animate-spin" /> : <Navigation size={16} className="text-gray-400" />}
-                    </div>
-                     {verificationResult && (
-                        <div className={`mt-2 flex items-center text-xs font-bold ${verificationResult.status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                           {verificationResult.status === 'success' ? <Check size={14} className="mr-1.5" /> : <AlertCircle size={14} className="mr-1.5" />}
-                           {verificationResult.message}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                
+                {/* Loss Information */}
+                <div>
+                    <h3 className="text-[#0078d4] font-bold text-lg mb-2">Essential Information</h3>
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="p-4 border-b border-gray-100">
+                            <label className="block text-xs font-bold text-red-500 mb-1">Risk Address*</label>
+                            <input 
+                                value={lossInfo.location}
+                                onChange={e => setLossInfo({...lossInfo, location: e.target.value})}
+                                className="w-full text-base border-b border-gray-300 pb-1 focus:outline-none focus:border-[#0078d4]" 
+                                placeholder="123 Example St" 
+                            />
                         </div>
-                    )}
+                        <div className="p-4 border-b border-gray-100">
+                            <label className="block text-xs font-bold text-red-500 mb-1">Loss Date*</label>
+                            <input 
+                                type="datetime-local"
+                                value={lossInfo.lossDate}
+                                onChange={e => setLossInfo({...lossInfo, lossDate: e.target.value})}
+                                className="w-full text-base bg-transparent focus:outline-none" 
+                            />
+                        </div>
+                        <div className="p-4 border-b border-gray-100">
+                            <label className="block text-xs font-bold text-gray-500 mb-1">Client Name*</label>
+                            <input 
+                                value={lossInfo.clientName}
+                                onChange={e => setLossInfo({...lossInfo, clientName: e.target.value})}
+                                className="w-full text-base border-b border-gray-300 pb-1 focus:outline-none focus:border-[#0078d4]" 
+                                placeholder="Jane Doe"
+                            />
+                        </div>
+                        <div className="flex">
+                            <div className="flex-1 p-4 border-r border-gray-100">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Insurance Carrier</label>
+                                <input 
+                                    value={lossInfo.insurance}
+                                    onChange={e => setLossInfo({...lossInfo, insurance: e.target.value})}
+                                    className="w-full text-base border-b border-gray-300 pb-1 focus:outline-none" 
+                                    placeholder="Optional"
+                                />
+                            </div>
+                            <div className="flex-1 p-4">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Claim #</label>
+                                <input 
+                                    value={lossInfo.claimNumber}
+                                    onChange={e => setLossInfo({...lossInfo, claimNumber: e.target.value})}
+                                    className="w-full text-base border-b border-gray-300 pb-1 focus:outline-none" 
+                                    placeholder="Optional"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex p-4">
+                             <div className="flex-1 pr-2">
+                                <label className="block text-xs font-bold text-blue-500 mb-1">Loss Type</label>
+                                <select className="w-full font-bold text-gray-900 bg-transparent border-b border-gray-300 pb-1">
+                                    <option>Water</option>
+                                    <option>Fire</option>
+                                    <option>Mold</option>
+                                </select>
+                             </div>
+                        </div>
+                    </div>
                 </div>
-
-                 <div className="relative">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center pl-1 mb-2"><ShieldCheck size={12} className="mr-1" /> Insurance Carrier</label>
-                    <input type="text" value={insurance} onChange={(e) => setInsurance(e.target.value)} placeholder="e.g., State Farm" className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-400 transition shadow-inner" />
-                </div>
-            </form>
-            
-            <button 
-                onClick={handleSubmit}
-                disabled={!isFormValid || isSubmitting}
-                className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
-                <span>{isSubmitting ? 'Creating Project File...' : 'Create & Open Project'}</span>
-            </button>
+            </div>
         </div>
     );
 };

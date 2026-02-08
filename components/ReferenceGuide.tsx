@@ -9,16 +9,16 @@ interface ReferenceGuideProps {
 }
 
 const ReferenceGuide: React.FC<ReferenceGuideProps> = ({ onBack }) => {
-  const { isOnline } = useAppContext();
+  const { isOnline, accessToken } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   const handleSearch = async () => {
-    if (!searchQuery.trim() || !isOnline) return;
+    if (!searchQuery.trim() || !isOnline || !accessToken) return;
     setIsSearching(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: accessToken });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Research this IICRC SR-500 topic: ${searchQuery}`,
@@ -37,7 +37,7 @@ const ReferenceGuide: React.FC<ReferenceGuideProps> = ({ onBack }) => {
         <button onClick={onBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-900"><ArrowLeft size={24} /></button>
         <div>
           <h2 className="text-2xl font-bold text-gray-900 tracking-tight">SR-500 Field Guide</h2>
-          <p className="text-sm text-gray-500 font-medium">Mitigation Intelligence Network</p>
+          <p className="text-sm text-gray-500 font-medium">Intelligence Network</p>
         </div>
       </header>
 

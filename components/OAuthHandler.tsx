@@ -1,85 +1,110 @@
 
-import React, { useState } from 'react';
-import { BrainCircuit, ShieldCheck, Lock, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, Lock, Loader2, AlertTriangle, Server, Key, CheckCircle, ArrowRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { USERS } from '../data/mockApi';
 
 const OAuthHandler: React.FC = () => {
-  const { setAuthentication } = useAppContext();
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { setAuthentication, setAccessToken, setCurrentUser } = useAppContext();
+  const [authStage, setAuthStage] = useState<'idle' | 'redirecting' | 'requesting_code' | 'exchanging_token' | 'complete'>('idle');
+  const [statusMessage, setStatusMessage] = useState('Initializing OAuth 2.0 Flow...');
 
-  const handleClientAuth = async () => {
-    setIsAuthenticating(true);
-    setError(null);
+  useEffect(() => {
+    handleOAuthFlow();
+  }, []);
+
+  const handleOAuthFlow = async () => {
+    setAuthStage('redirecting');
+    setStatusMessage("Redirecting to Identity Provider...");
     
-    // In a real app, this would be a fetch call to your backend token endpoint
-    // which securely handles the client_id and client_secret exchange.
-    // We simulate this with a timeout.
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    setAuthStage('requesting_code');
+    setStatusMessage("Requesting Authorization Code...");
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    setAuthStage('exchanging_token');
+    setStatusMessage("Exchanging Code for Access Token...");
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const mockOAuthToken = "ya29.a0Aa4xrX" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    setAccessToken(mockOAuthToken);
 
-    // Simulate success/failure
-    const authSuccess = Math.random() > 0.1; // 90% success rate for demo
+    // MOCK: Auto-login as 'Elite Admin' for demo purposes. 
+    // In a real app, this comes from the token payload.
+    // Change index to test different roles: 0=CompanyAdmin, 1=Tech, 2=SuperAdmin, 3=DryRight Admin
+    const loggedInUser = USERS[0]; 
+    setCurrentUser(loggedInUser);
 
-    if (authSuccess) {
-      // On success, the token would be stored securely (e.g., in memory)
-      // and the global app state is updated.
-      setAuthentication(true);
-    } else {
-      setError("Authentication failed. The service could not be reached or credentials are invalid. Please try again.");
-      setIsAuthenticating(false);
-    }
+    setAuthStage('complete');
+    setStatusMessage(`Welcome back, ${loggedInUser.name} (${loggedInUser.role})`);
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    setAuthentication(true);
   };
 
   return (
-    <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-between p-8 max-w-md mx-auto relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-blue-600/10 to-transparent pointer-events-none" />
-      <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full" />
-      
-      <div className="relative z-10 w-full flex flex-col items-center text-center mt-8">
-        <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2rem] flex items-center justify-center text-white font-black text-4xl mb-6 shadow-2xl shadow-blue-500/30 ring-1 ring-white/10">R</div>
-        <h1 className="text-3xl font-black text-white tracking-tighter mb-2">Restoration<span className="text-blue-500">AI</span></h1>
-        <p className="text-slate-400 text-sm font-medium leading-relaxed max-w-[280px]">Securely connecting to the AI Core via OAuth 2.0 Client Credentials.</p>
-      </div>
+    <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+        {/* Background Effects */}
+        <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-blue-900/10 to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-600/10 blur-[100px] rounded-full" />
 
-      <div className="relative z-10 w-full flex flex-col items-center">
-          <div className="w-full bg-white/5 border border-white/10 rounded-[2.5rem] p-6 text-center backdrop-blur-md">
-              <div className="flex justify-center mb-4"><div className="p-3 bg-indigo-500/20 rounded-2xl border border-indigo-500/30 shadow-lg"><Lock size={24} className="text-indigo-300" /></div></div>
-              <h2 className="text-lg font-bold text-white mb-2">Service Authentication</h2>
-              <p className="text-slate-400 text-xs leading-relaxed mb-6">This application authenticates as a trusted service to securely access Google Cloud and Gemini APIs. No user sign-in is required.</p>
-              
-              {error && (
-                <div className="bg-red-500/20 border border-red-500/30 text-red-300 text-xs p-3 rounded-lg mb-4 flex items-start space-x-2">
-                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                  <span>{error}</span>
+        <div className="z-10 w-full max-w-md bg-white/5 border border-white/10 rounded-[2rem] p-8 backdrop-blur-xl shadow-2xl">
+            <div className="flex flex-col items-center mb-8">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-blue-500/20">
+                    <Lock size={32} />
                 </div>
-              )}
+                <h1 className="text-xl font-bold text-white tracking-tight">Restoration<span className="text-blue-500">AI</span> Secure Login</h1>
+                <p className="text-slate-400 text-xs mt-1 font-mono">OAuth 2.0 Authorization Code Flow</p>
+            </div>
 
-              <button 
-                onClick={handleClientAuth}
-                disabled={isAuthenticating}
-                className="w-full bg-white text-slate-900 h-14 rounded-2xl font-bold text-sm flex items-center justify-center space-x-3 shadow-2xl hover:bg-slate-50 active:scale-[0.98] transition-all ring-1 ring-slate-200 disabled:opacity-60"
-              >
-                {isAuthenticating ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin" />
-                    <span>Authenticating...</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck size={20} />
-                    <span>Authorize Service</span>
-                  </>
-                )}
-              </button>
-              <p className="text-slate-500 text-[9px] text-center mt-4 font-bold uppercase tracking-widest">Client Credentials Grant</p>
-          </div>
-      </div>
-      
-      <div className="w-full text-center">
-        <p className="text-slate-600 text-[10px] font-bold tracking-widest uppercase">
-          Powered by Google Cloud & Gemini
-        </p>
-      </div>
+            <div className="space-y-6 relative">
+                {/* Connecting Line */}
+                <div className="absolute left-6 top-6 bottom-6 w-0.5 bg-slate-800 -z-10" />
+
+                {/* Step 1: Authorization */}
+                <div className={`flex items-center space-x-4 transition-opacity duration-500 ${authStage === 'redirecting' || authStage === 'requesting_code' || authStage === 'exchanging_token' || authStage === 'complete' ? 'opacity-100' : 'opacity-30'}`}>
+                    <div className={`w-12 h-12 rounded-full border-4 flex items-center justify-center bg-slate-900 transition-colors duration-500 ${authStage === 'redirecting' ? 'border-blue-500 text-blue-500 animate-pulse' : (authStage !== 'idle' ? 'border-green-500 text-green-500' : 'border-slate-700 text-slate-700')}`}>
+                        {authStage === 'redirecting' ? <Loader2 size={20} className="animate-spin" /> : (authStage !== 'idle' ? <CheckCircle size={20} /> : <Server size={20} />)}
+                    </div>
+                    <div>
+                        <h3 className={`text-sm font-bold ${authStage === 'redirecting' ? 'text-blue-400' : 'text-white'}`}>Authorization Request</h3>
+                        <p className="text-[10px] text-slate-500">scope=email profile mitigation.read</p>
+                    </div>
+                </div>
+
+                {/* Step 2: Token Exchange */}
+                <div className={`flex items-center space-x-4 transition-opacity duration-500 ${authStage === 'exchanging_token' || authStage === 'complete' ? 'opacity-100' : 'opacity-30'}`}>
+                    <div className={`w-12 h-12 rounded-full border-4 flex items-center justify-center bg-slate-900 transition-colors duration-500 ${authStage === 'exchanging_token' ? 'border-indigo-500 text-indigo-500 animate-pulse' : (authStage === 'complete' ? 'border-green-500 text-green-500' : 'border-slate-700 text-slate-700')}`}>
+                        {authStage === 'exchanging_token' ? <Loader2 size={20} className="animate-spin" /> : (authStage === 'complete' ? <CheckCircle size={20} /> : <ArrowRight size={20} />)}
+                    </div>
+                    <div>
+                        <h3 className={`text-sm font-bold ${authStage === 'exchanging_token' ? 'text-indigo-400' : 'text-white'}`}>Token Exchange</h3>
+                        <p className="text-[10px] text-slate-500">POST /oauth/token grant_type=code</p>
+                    </div>
+                </div>
+
+                 {/* Step 3: Session */}
+                 <div className={`flex items-center space-x-4 transition-opacity duration-500 ${authStage === 'complete' ? 'opacity-100' : 'opacity-30'}`}>
+                    <div className={`w-12 h-12 rounded-full border-4 flex items-center justify-center bg-slate-900 transition-colors duration-500 ${authStage === 'complete' ? 'border-emerald-500 text-emerald-500' : 'border-slate-700 text-slate-700'}`}>
+                        {authStage === 'complete' ? <ShieldCheck size={20} /> : <Key size={20} />}
+                    </div>
+                    <div>
+                        <h3 className={`text-sm font-bold ${authStage === 'complete' ? 'text-emerald-400' : 'text-white'}`}>Session Granted</h3>
+                        <p className="text-[10px] text-slate-500">Bearer {authStage === 'complete' ? "ya29..." : "..."}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                 <p className="text-xs font-mono text-blue-400 animate-pulse">{statusMessage}</p>
+            </div>
+        </div>
+        
+        <div className="mt-8 flex items-center space-x-2 text-slate-600 text-[10px] font-bold uppercase tracking-widest">
+            <Lock size={12} />
+            <span>256-bit TLS Encryption</span>
+        </div>
     </div>
   );
 };

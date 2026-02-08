@@ -1,328 +1,368 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  CheckCircle2, MapPin, Calendar, ShieldCheck, AlertCircle, Clock,
-  BrainCircuit, Printer, Loader2, Scan, Droplets, ClipboardList, Download, Cuboid, Eye,
-  User, Mail, Phone, UserSquare, FileText, ListChecks, Video, Upload, PlayCircle
+    ArrowLeft, CheckCircle2, Circle, ChevronRight, 
+    Camera, Scan, Wind, Droplets, DollarSign, 
+    ShieldCheck, AlertTriangle, FileText, ArrowRight, XCircle,
+    Maximize2, Layout, Plus
 } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { useAppContext } from '../context/AppContext';
-import { getProjectById } from '../data/mockApi';
-import { Project, AITask, RoomScan, VideoLog } from '../types';
-import SkeletonLoader from './SkeletonLoader';
-import WalkthroughViewer from './WalkthroughViewer';
+import { getProjectById, updateProjectStage, updateProject } from '../data/mockApi';
+// Added WaterCategory to imports to fix type comparison error on line 186
+import { Project, ProjectStage, RoomScan, WaterCategory } from '../types';
+
+// Import sub-components for each step
+import PhotoDocumentation from './PhotoDocumentation';
 import ComplianceChecklist from './ComplianceChecklist';
+import EquipmentManager from './EquipmentManager';
+import DryingLogs from './DryingLogs';
+import Billing from './Billing';
+import TicSheet from './TicSheet';
+import WalkthroughViewer from './WalkthroughViewer';
 
-const StatusBadge = ({ status }: { status: string }) => {
-  let colorClasses = 'bg-slate-700 text-blue-500';
-  let dotClasses = 'bg-slate-500';
-  const lowerStatus = status.toLowerCase();
-  if (lowerStatus.includes('drying')) { colorClasses = 'bg-blue-500/20 text-blue-500'; dotClasses = 'bg-blue-600 animate-pulse'; }
-  else if (lowerStatus.includes('assessment')) { colorClasses = 'bg-indigo-500/20 text-indigo-500'; dotClasses = 'bg-indigo-600 animate-pulse'; }
-  else if (lowerStatus.includes('completed')) { colorClasses = 'bg-green-500/20 text-green-500'; dotClasses = 'bg-green-600'; }
-  else if (lowerStatus.includes('paid')) { colorClasses = 'bg-emerald-500/20 text-emerald-500'; dotClasses = 'bg-emerald-600'; }
-  return (<div className={`inline-flex items-center px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest ${colorClasses}`}><div className={`w-2 h-2 rounded-full mr-2.5 ${dotClasses}`} /><span>{status}</span></div>);
-};
-
-const ProjectSidebar: React.FC<{ project: Project }> = ({ project }) => (
-    <div className="space-y-6">
-        <div className="glass-card p-6 rounded-[2.5rem]">
-            <h4 className="font-black text-white tracking-tight mb-4">Client Contact</h4>
-            <div className="space-y-4">
-                <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><User size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Client</p><p className="text-sm font-bold text-white">{project.client}</p></div>
-                </div>
-                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><Mail size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Email</p><p className="text-sm font-bold text-white">{project.clientEmail}</p></div>
-                </div>
-                 <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><Phone size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Phone</p><p className="text-sm font-bold text-white">{project.clientPhone}</p></div>
-                </div>
-            </div>
-            </div>
-
-            <div className="glass-card p-6 rounded-[2.5rem]">
-            <h4 className="font-black text-white tracking-tight mb-4">Insurance Details</h4>
-            <div className="space-y-4">
-                <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><ShieldCheck size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Carrier</p><p className="text-sm font-bold text-white">{project.insurance}</p></div>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><FileText size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Policy #</p><p className="text-sm font-bold text-white">{project.policyNumber}</p></div>
-                </div>
-                <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-2xl">
-                    <div className="w-10 h-10 bg-slate-900/50 rounded-full flex items-center justify-center text-blue-600"><UserSquare size={20} /></div>
-                    <div><p className="text-xs font-bold text-blue-600 uppercase">Adjuster</p><p className="text-sm font-bold text-white">{project.adjuster}</p></div>
-                </div>
-            </div>
-            </div>
-    </div>
-);
-
+const STAGES: { id: ProjectStage; label: string; icon: React.ReactNode }[] = [
+    { id: 'Intake', label: 'Intake', icon: <FileText size={20} /> },
+    { id: 'Inspection', label: 'Inspection', icon: <Camera size={20} /> },
+    { id: 'Scope', label: 'Scope', icon: <Scan size={20} /> },
+    { id: 'Stabilize', label: 'Stabilize', icon: <Wind size={20} /> },
+    { id: 'Monitor', label: 'Monitor', icon: <Droplets size={20} /> },
+    { id: 'Closeout', label: 'Closeout', icon: <DollarSign size={20} /> },
+];
 
 const ProjectDetails: React.FC = () => {
-  const { selectedProjectId, setActiveTab } = useAppContext();
-  const [project, setProject] = useState<Project | null>(null);
-  const [tasks, setTasks] = useState<AITask[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isGeneratingTasks, setIsGeneratingTasks] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [viewingScan, setViewingScan] = useState<RoomScan | null>(null);
-  
-  // Video Upload State
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const { setActiveTab, selectedProjectId } = useAppContext();
+  const [loss, setLoss] = useState<Project | null>(null);
+  const [currentStageIndex, setCurrentStageIndex] = useState(0);
+  const [selectedScan, setSelectedScan] = useState<RoomScan | null>(null);
 
   useEffect(() => {
-    const fetchProject = async () => {
-      if (selectedProjectId) {
-        setIsLoading(true);
-        const proj = await getProjectById(selectedProjectId);
-        setProject(proj);
-        setTasks(proj?.tasks || []);
-        setIsLoading(false);
-      }
+    const load = async () => {
+        if (selectedProjectId) {
+            const data = await getProjectById(selectedProjectId);
+            setLoss(data as Project);
+            // Initialize stage index based on project data
+            const stageIdx = STAGES.findIndex(s => s.id === (data?.currentStage || 'Intake'));
+            setCurrentStageIndex(stageIdx >= 0 ? stageIdx : 0);
+        }
     };
-    fetchProject();
+    load();
   }, [selectedProjectId]);
 
-  const generateTasks = async () => {
-    if (!project) return;
-    setIsGeneratingTasks(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Project status: ${project.status}. Milestones: ${JSON.stringify(project.milestones)}. Create a list of 3 actionable tasks for the technician.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              tasks: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["tasks"]
-          }
-        }
-      });
-      const result = JSON.parse(response.text);
-      const newTasks: AITask[] = result.tasks.map((t: string, i: number) => ({ id: `ai-${Date.now()}-${i}`, text: t, isCompleted: false }));
-      setTasks(prev => [...prev, ...newTasks]);
-    } catch (err) { console.error(err); } 
-    finally { setIsGeneratingTasks(false); }
+  const handleUpdateProject = async (updates: Partial<Project>) => {
+      if (!loss) return;
+      const updatedLoss = await updateProject(loss.id, updates);
+      if (updatedLoss) {
+          setLoss(updatedLoss);
+      }
   };
-  
-  const toggleTask = (taskId: string) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t));
+
+  const handleNextStage = async () => {
+      if (currentStageIndex < STAGES.length - 1 && loss) {
+          const nextStage = STAGES[currentStageIndex + 1].id;
+          await updateProjectStage(loss.id, nextStage);
+          
+          setLoss(prev => prev ? { ...prev, currentStage: nextStage } : null);
+          setCurrentStageIndex(prev => prev + 1);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
   };
-  
-  const generatePdf = async () => {
-    setIsPrinting(true);
-    const input = document.getElementById('pdf-content');
-    if (input) {
-      document.documentElement.classList.remove('dark');
-      document.body.style.backgroundColor = '#ffffff';
-      const canvas = await html2canvas(input, { scale: 2, backgroundColor: '#ffffff' });
-      document.documentElement.classList.add('dark');
-      document.body.style.backgroundColor = '';
+
+  const handleStageSelect = (index: number) => {
+      setCurrentStageIndex(index);
+  };
+
+  // Stage Validation Logic
+  const stageRequirements = useMemo(() => {
+      if (!loss) return [];
+      const reqs = [];
       
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Project-Report-${project?.id}.pdf`);
-    }
-    setIsPrinting(false);
-  };
+      switch (STAGES[currentStageIndex].id) {
+          case 'Intake':
+              reqs.push({ label: 'Verify Address', valid: !!loss.address });
+              reqs.push({ label: 'Assign Category', valid: !!loss.waterCategory });
+              break;
+          case 'Inspection':
+              const hasPhotos = loss.rooms.some(r => r.photos.length > 0) || (loss.roomScans?.length ?? 0) > 0;
+              const hasCompliance = loss.complianceChecks.aiChecklist.some(c => c.isCompleted);
+              reqs.push({ label: 'Capture Site Photos', valid: hasPhotos });
+              reqs.push({ label: 'Complete Compliance Check', valid: hasCompliance });
+              break;
+          case 'Stabilize':
+              const hasEquipment = (loss.equipment?.length ?? 0) > 0;
+              reqs.push({ label: 'Place Equipment', valid: hasEquipment });
+              break;
+          default:
+              break;
+      }
+      return reqs;
+  }, [loss, currentStageIndex]);
 
-  const handleExportXactimate = () => {
-    alert("Simulating export of project data to Xactimate (.esx file)...");
-  };
+  const canAdvance = stageRequirements.every(r => r.valid);
 
-  const handleVideoUploadClick = () => {
-    videoInputRef.current?.click();
-  };
+  if (!loss) return <div className="p-8 text-center text-gray-500">Loading Workflow...</div>;
 
-  const handleVideoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0] && project) {
-      const file = event.target.files[0];
-      setIsUploadingVideo(true);
-      
-      // Simulate upload delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const newVideo: VideoLog = {
-        id: `vid-${Date.now()}`,
-        url: URL.createObjectURL(file), // In real app, this would be cloud URL
-        timestamp: Date.now(),
-        description: `Uploaded Video - ${file.name}`
-      };
-
-      setProject({
-        ...project,
-        videos: [newVideo, ...(project.videos || [])]
-      });
-      setIsUploadingVideo(false);
-    }
-  };
-  
-  if (isLoading) {
-    return (
-      <div className="p-4 md:p-8 space-y-6">
-        <SkeletonLoader height="60px" borderRadius="1.5rem" count={1} className="bg-slate-800" />
-        <SkeletonLoader count={3} height="120px" borderRadius="1.5rem" className="bg-slate-800" />
-      </div>
-    );
-  }
-
-  if (!project) {
-    return <div className="p-8 text-center text-blue-600">Project not found. Please select one from the dashboard.</div>;
-  }
-  
-  if (viewingScan) {
-    return <WalkthroughViewer scan={viewingScan} onClose={() => setViewingScan(null)} />;
-  }
+  const currentStage = STAGES[currentStageIndex];
 
   return (
-    <div className="p-4 md:p-8">
-        <div id="pdf-content" className="space-y-6 md:bg-slate-900 text-blue-400 p-1">
-            <header className="glass-card md:p-6 p-4 rounded-[2rem] md:rounded-[2.5rem]">
-                <div className="flex justify-between items-start">
-                  <div>
-                      <p className="text-sm font-bold text-blue-600">{project.id}</p>
-                      <h2 className="text-2xl font-bold text-white tracking-tight">{project.client}</h2>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button onClick={handleExportXactimate} className="hidden md:flex items-center space-x-2 bg-brand-cyan/10 text-brand-cyan px-4 py-2 rounded-lg text-sm font-bold border border-brand-cyan/20">
-                      <Download size={16} />
-                      <span>Export to Xactimate</span>
-                    </button>
-                    <div className="hidden md:block"><StatusBadge status={project.status} /></div>
-                  </div>
-                </div>
-                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div className="flex items-center space-x-2"><MapPin size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.address}</span></div>
-                <div className="flex items-center space-x-2"><Calendar size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.startDate}</span></div>
-                <div className="flex items-center space-x-2"><ShieldCheck size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.insurance}</span></div>
-                <div className="flex items-center space-x-2"><Clock size={14} className="text-blue-600" /><span className="font-medium text-blue-500">{project.progress}% Complete</span></div>
-                </div>
-                <div className="w-full bg-white/10 rounded-full h-2 mt-6 overflow-hidden"><div className="bg-brand-cyan h-2 rounded-full" style={{ width: `${project.progress}%` }} /></div>
-            </header>
-            
-            <div className="grid md:grid-cols-5 gap-6">
-                <div className="md:col-span-3 space-y-6">
-                    <div className="md:hidden">
-                        <button onClick={() => setActiveTab('tic-sheet')} className="w-full glass-card p-5 rounded-[2rem] flex items-center space-x-4">
-                            <div className="p-3 bg-brand-indigo/20 text-brand-indigo rounded-2xl border border-brand-indigo/30"><ListChecks size={24} /></div>
-                            <div>
-                                <h3 className="font-black text-white tracking-tight">Scope & Tic Sheet</h3>
-                                <p className="text-xs text-blue-600 mt-0.5">Define work authorization and materials.</p>
-                            </div>
-                        </button>
-                    </div>
-
-                    <div className="md:hidden"><ComplianceChecklist project={project} /></div>
-                    <div className="hidden md:block"><ComplianceChecklist project={project} /></div>
-
-                    <section className="glass-card p-4 md:p-6 rounded-[2rem] md:rounded-[2.5rem]">
-                        <div className="flex items-center space-x-3 mb-4">
-                        <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20"><Cuboid size={24} /></div>
-                        <div><h3 className="font-black text-white tracking-tight">3D Environment Scans</h3><p className="text-xs text-blue-600 mt-0.5">Interactive site walkthroughs.</p></div>
-                        </div>
-                        {project.roomScans.length > 0 ? (
-                        <div className="space-y-3">
-                            {project.roomScans.map(scan => (
-                            <div key={scan.scanId} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex justify-between items-center">
-                                <div><h4 className="font-bold text-sm text-blue-400">{scan.roomName}</h4><p className="text-[10px] text-blue-600 font-medium">{scan.dimensions.sqft.toFixed(1)} sq ft</p></div>
-                                <button onClick={() => setViewingScan(scan)} className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 hover:bg-emerald-600 transition-colors"><Eye size={14} /><span>Launch</span></button>
-                            </div>
-                            ))}
-                        </div>
-                        ) : (
-                        <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10"><p className="text-sm font-bold text-blue-500">No 3D Scans Available</p><p className="text-xs text-blue-700 mt-1">Perform a scan to create a walkthrough.</p></div>
-                        )}
-                    </section>
-
-                    <section className="glass-card p-4 md:p-6 rounded-[2rem] md:rounded-[2.5rem]">
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-3">
-                                <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl border border-indigo-500/20"><Video size={24} /></div>
-                                <div><h3 className="font-black text-white tracking-tight">Project Video Logs</h3><p className="text-xs text-blue-600 mt-0.5">Visual documentation timeline.</p></div>
-                            </div>
-                            <input type="file" ref={videoInputRef} onChange={handleVideoFileChange} className="hidden" accept="video/*" />
-                            <button onClick={handleVideoUploadClick} disabled={isUploadingVideo} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 hover:bg-indigo-700 transition-colors shadow-lg active:scale-95 disabled:opacity-50">
-                                {isUploadingVideo ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                <span>{isUploadingVideo ? 'Uploading...' : 'Upload Video'}</span>
-                            </button>
-                        </div>
-                        
-                        {(project.videos && project.videos.length > 0) ? (
-                            <div className="grid grid-cols-1 gap-3">
-                                {project.videos.map(video => (
-                                    <div key={video.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 flex items-center space-x-4">
-                                        <div className="w-12 h-12 bg-black/40 rounded-xl flex items-center justify-center shrink-0 text-white/50"><PlayCircle size={24} /></div>
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="font-bold text-sm text-blue-400 truncate">{video.description}</h4>
-                                            <p className="text-[10px] text-blue-600 font-medium">{new Date(video.timestamp).toLocaleDateString()} • {new Date(video.timestamp).toLocaleTimeString()}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10">
-                                <p className="text-sm font-bold text-blue-500">No Videos Uploaded</p>
-                                <p className="text-xs text-blue-700 mt-1">Capture site conditions using video.</p>
-                            </div>
-                        )}
-                    </section>
-                </div>
-
-                <div className="md:col-span-2 space-y-6">
-                    <div className="hidden md:block"><ProjectSidebar project={project} /></div>
-                    <section className="glass-card p-6 rounded-[2.5rem]">
-                        <h3 className="font-black text-white tracking-tight mb-4">Project Milestones</h3>
-                        <div className="space-y-4">
-                            {project.milestones.map((m, i) => (
-                            <div key={i} className="flex items-start space-x-3">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center ${m.status === 'completed' ? 'bg-green-500/20 text-green-400' : m.status === 'active' ? 'bg-blue-500/20 text-blue-600' : 'bg-slate-700 text-blue-600'}`}>
-                                {m.status === 'completed' ? <CheckCircle2 size={14} /> : m.status === 'active' ? <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" /> : <div className="w-2 h-2 bg-blue-600 rounded-full" />}
-                                </div>
-                                <div><p className="font-bold text-sm text-blue-400">{m.title}</p><p className="text-xs text-blue-600">{m.date}</p></div>
-                            </div>
-                            ))}
-                        </div>
-                    </section>
-                    
-                    <section className="glass-card p-6 rounded-[2.5rem]">
-                        <div className="flex justify-between items-start mb-4"><h3 className="font-black text-white tracking-tight">AI Action Items</h3><button onClick={generateTasks} disabled={isGeneratingTasks} className="bg-brand-indigo/20 text-brand-indigo px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-2 border border-brand-indigo/30">{isGeneratingTasks ? <Loader2 size={14} className="animate-spin" /> : <BrainCircuit size={14} />}<span>{isGeneratingTasks ? 'Thinking' : 'Suggest'}</span></button></div>
-                        <div className="space-y-3">
-                            {tasks.map(t => (
-                            <div key={t.id} onClick={() => toggleTask(t.id)} className={`flex items-start space-x-3 p-3 rounded-xl cursor-pointer ${t.isCompleted ? 'bg-green-500/10 text-blue-600' : 'bg-white/5'}`}>
-                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border-2 ${t.isCompleted ? 'bg-green-500 border-green-500 text-white' : 'bg-slate-900 border-slate-600'}`}>{t.isCompleted && <CheckCircle2 size={12} />}</div>
-                                <p className={`text-sm font-medium flex-1 ${t.isCompleted ? 'line-through' : 'text-blue-400'}`}>{t.text}</p>
-                            </div>
-                            ))}
-                        </div>
-                    </section>
+    <div className="flex flex-col h-full bg-gray-50">
+        {/* Workflow Header */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+            <div className="flex items-center px-4 py-3">
+                <button onClick={() => setActiveTab('losses')} className="mr-3 text-gray-500 hover:text-gray-900"><ArrowLeft size={20} /></button>
+                <div className="flex-1 min-w-0">
+                    <h1 className="text-base font-bold text-gray-900 truncate">{loss.client}</h1>
+                    <p className="text-xs text-gray-500 truncate">{loss.address}</p>
                 </div>
             </div>
+
+            {/* Symbol-Based Progress Navigation */}
+            <div className="px-6 pb-4 pt-2 bg-white">
+                <div className="relative flex items-center justify-between">
+                    {/* Connecting Line Background */}
+                    <div className="absolute left-2 right-2 top-1/2 h-1 bg-gray-100 -z-10 rounded-full" />
+                    
+                    {/* Active Progress Line */}
+                    <div 
+                        className="absolute left-2 top-1/2 h-1 bg-[#0078d4] -z-10 transition-all duration-500 rounded-full" 
+                        style={{ width: `${(currentStageIndex / (STAGES.length - 1)) * 100}%` }} 
+                    />
+
+                    {STAGES.map((stage, idx) => {
+                        const isActive = idx === currentStageIndex;
+                        const isCompleted = idx < currentStageIndex;
+                        const isFuture = idx > currentStageIndex;
+                        
+                        return (
+                            <button 
+                                key={stage.id} 
+                                onClick={() => handleStageSelect(idx)}
+                                className={`relative group flex flex-col items-center justify-center transition-all duration-300 outline-none focus:outline-none`}
+                            >
+                                <div className={`
+                                    w-12 h-12 rounded-full flex items-center justify-center border-4 shadow-sm transition-all duration-300 z-10
+                                    ${isActive 
+                                        ? 'bg-[#0078d4] border-white ring-4 ring-[#0078d4]/20 text-white scale-110' 
+                                        : isCompleted 
+                                            ? 'bg-white border-[#0078d4] text-[#0078d4]' 
+                                            : 'bg-white border-gray-200 text-gray-300'}
+                                `}>
+                                    {isCompleted ? <CheckCircle2 size={24} strokeWidth={3} /> : stage.icon}
+                                </div>
+                                
+                                {/* Floating Label for Active/Hover */}
+                                <div className={`
+                                    absolute top-14 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-1 rounded-md bg-gray-900 text-white text-[10px] font-bold uppercase tracking-widest shadow-lg pointer-events-none transition-all duration-300
+                                    ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
+                                `}>
+                                    {stage.label}
+                                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </header>
+
+        {/* Dynamic Content Area based on Stage */}
+        <div className="flex-1 overflow-y-auto pb-32">
+            
+            {/* Stage: INTAKE */}
+            {currentStage.id === 'Intake' && (
+                <div className="p-4 space-y-6 animate-in slide-in-from-right duration-300">
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                        <h3 className="font-bold text-gray-900 text-lg mb-4">Job Details</h3>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div><span className="block text-xs text-gray-400 font-bold uppercase">Loss Date</span>{loss.lossDate?.replace('T', ' ') || 'N/A'}</div>
+                            <div><span className="block text-xs text-gray-400 font-bold uppercase">Claim #</span>{loss.claimNumber || 'N/A'}</div>
+                            <div><span className="block text-xs text-gray-400 font-bold uppercase">Adjuster</span>{loss.adjuster || 'Unassigned'}</div>
+                            <div><span className="block text-xs text-gray-400 font-bold uppercase">Policy</span>{loss.policyNumber || 'N/A'}</div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-blue-50 p-4 rounded-3xl border border-blue-100">
+                        <h3 className="font-bold text-blue-900 mb-2 flex items-center"><AlertTriangle size={16} className="mr-2"/> Initial Risk Assessment</h3>
+                        <p className="text-sm text-blue-800 mb-4">{loss.summary}</p>
+                        <div className="flex space-x-2">
+                            {/* Updated comparison to use WaterCategory enum instead of string literal to fix type error */}
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase border ${loss.waterCategory === WaterCategory.CAT_3 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>{loss.waterCategory?.replace('_', ' ')}</span>
+                            <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-gray-200 text-gray-700 border border-gray-300">{loss.lossClass?.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+
+                    <button className="w-full py-4 bg-white border border-gray-200 text-gray-600 font-bold rounded-2xl flex justify-between items-center px-6 hover:bg-gray-50 transition-colors">
+                        <span>View Work Authorization</span>
+                        <ChevronRight size={18} />
+                    </button>
+                </div>
+            )}
+
+            {/* Stage: INSPECTION */}
+            {currentStage.id === 'Inspection' && (
+                <div className="p-4 space-y-6 animate-in slide-in-from-right duration-300">
+                    <ComplianceChecklist project={loss} onUpdate={handleUpdateProject} />
+                    
+                    <div>
+                        <h3 className="font-bold text-gray-900 text-lg mb-2 px-1">Initial Photos</h3>
+                        <div className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
+                            <PhotoDocumentation onStartScan={() => setActiveTab('scanner')} project={loss} isMobile={true} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Stage: SCOPE */}
+            {currentStage.id === 'Scope' && (
+                <div className="p-4 space-y-8 animate-in slide-in-from-right duration-300">
+                    
+                    {/* Spatial Intelligence Section */}
+                    <div>
+                        <div className="flex justify-between items-center px-1 mb-4">
+                            <div>
+                                <h3 className="font-bold text-gray-900 text-lg flex items-center">
+                                    <Scan className="mr-2 text-indigo-600" size={20} />
+                                    Spatial Intelligence
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-0.5">LiDAR mapping & AI dimensioning</p>
+                            </div>
+                            {loss.roomScans && loss.roomScans.length > 0 && (
+                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                                    {loss.roomScans.length} Scans Active
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex overflow-x-auto gap-4 pb-2 -mx-4 px-4 no-scrollbar">
+                            {/* New Scan Action Card */}
+                            <button 
+                                onClick={() => setActiveTab('scanner')} 
+                                className="flex-shrink-0 w-40 h-56 rounded-[2rem] border-2 border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 flex flex-col items-center justify-center space-y-4 active:scale-95 transition-all group"
+                            >
+                                <div className="w-14 h-14 bg-white text-indigo-600 rounded-full flex items-center justify-center shadow-md group-hover:scale-110 transition-transform group-hover:shadow-lg border border-indigo-100">
+                                    <Plus size={28} strokeWidth={3} />
+                                </div>
+                                <div className="text-center px-2">
+                                    <span className="block text-sm font-bold text-indigo-900 mb-1">New Room Scan</span>
+                                    <span className="text-[10px] text-indigo-400 font-medium leading-tight block">LiDAR • Photogrammetry • Splats</span>
+                                </div>
+                            </button>
+
+                            {/* Captured Scans */}
+                            {loss.roomScans?.map((scan) => (
+                                <button 
+                                    key={scan.scanId}
+                                    onClick={() => setSelectedScan(scan)}
+                                    className="flex-shrink-0 w-40 h-56 rounded-[2rem] bg-white border border-gray-100 shadow-sm flex flex-col overflow-hidden relative active:scale-95 transition-all group"
+                                >
+                                    <div className="h-32 bg-gray-50 flex items-center justify-center p-6 relative overflow-hidden">
+                                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
+                                        {scan.floorPlanSvg ? (
+                                            <div className="w-full h-full drop-shadow-md transform group-hover:scale-110 transition-transform duration-500" dangerouslySetInnerHTML={{ __html: scan.floorPlanSvg }} />
+                                        ) : (
+                                            <Layout className="text-gray-300" size={40} />
+                                        )}
+                                        <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm p-1.5 rounded-full border border-gray-100 shadow-sm">
+                                            <Maximize2 size={12} className="text-gray-600" />
+                                        </div>
+                                    </div>
+                                    <div className="p-4 text-left flex-1 flex flex-col justify-between bg-white relative z-10">
+                                        <div>
+                                            <h4 className="font-bold text-gray-900 text-sm truncate mb-0.5">{scan.roomName}</h4>
+                                            <div className="flex items-center space-x-1">
+                                                <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-md">{scan.dimensions.sqft.toFixed(0)} sq ft</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center space-x-1.5 text-[10px] text-indigo-500 font-medium pt-2 border-t border-gray-50 mt-2">
+                                            <Camera size={12} />
+                                            <span>{scan.placedPhotos.length} photos</span>
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Scope Sheet Section */}
+                    <div>
+                        <div className="flex justify-between items-center px-1 mb-3">
+                            <div>
+                                <h3 className="font-bold text-gray-900 text-lg">Scope of Work</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Line items & estimations</p>
+                            </div>
+                            <button className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 uppercase tracking-wide hover:bg-indigo-100 transition-colors">
+                                Export Xactimate
+                            </button>
+                        </div>
+                        <div className="h-[500px] border border-gray-200 rounded-[2rem] overflow-hidden shadow-sm bg-white relative">
+                            <TicSheet project={loss} isMobile={true} embedded={true} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Stage: STABILIZE */}
+            {currentStage.id === 'Stabilize' && (
+                <div className="p-4 space-y-6 animate-in slide-in-from-right duration-300">
+                    <EquipmentManager isMobile={true} project={loss} onUpdate={handleUpdateProject} />
+                </div>
+            )}
+
+            {/* Stage: MONITOR */}
+            {currentStage.id === 'Monitor' && (
+                <div className="p-4 space-y-6 animate-in slide-in-from-right duration-300">
+                    <DryingLogs onOpenAnalysis={() => {}} isMobile={true} project={loss} />
+                </div>
+            )}
+
+            {/* Stage: CLOSEOUT */}
+            {currentStage.id === 'Closeout' && (
+                <div className="p-4 space-y-6 animate-in slide-in-from-right duration-300">
+                    <div className="bg-green-50 p-6 rounded-3xl border border-green-100 text-center">
+                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <CheckCircle2 size={32} />
+                        </div>
+                        <h3 className="text-lg font-bold text-green-900">Ready for Completion</h3>
+                        <p className="text-sm text-green-700 mt-1">All drying goals met. Equipment demobilized.</p>
+                    </div>
+                    <Billing />
+                </div>
+            )}
+
         </div>
 
-      <div className="flex space-x-4 mt-6 md:hidden">
-        <button onClick={() => setActiveTab('billing')} className="w-full py-4 bg-gray-200 text-gray-800 rounded-2xl font-bold flex items-center justify-center space-x-2 border border-gray-300"><span>Billing</span></button>
-        <button onClick={generatePdf} disabled={isPrinting} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg">{isPrinting ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}<span>Report</span></button>
-      </div>
-      <div className="hidden md:flex space-x-4 mt-6">
-        <button onClick={generatePdf} disabled={isPrinting} className="w-full py-4 bg-brand-cyan text-slate-900 rounded-2xl font-bold flex items-center justify-center space-x-2 shadow-lg active:scale-[0.98] transition-all">{isPrinting ? <Loader2 size={20} className="animate-spin" /> : <Printer size={20} />}<span>{isPrinting ? 'Generating PDF...' : 'Print Full Report'}</span></button>
-      </div>
+        {/* Walkthrough Viewer Modal */}
+        {selectedScan && (
+            <WalkthroughViewer 
+                scan={selectedScan} 
+                onClose={() => setSelectedScan(null)} 
+            />
+        )}
+
+        {/* Floating Action Button - Workflow Advancement */}
+        <div className="fixed bottom-24 left-4 right-4 z-30 flex flex-col space-y-2">
+            {stageRequirements.length > 0 && (
+                <div className="bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl p-3 shadow-lg">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Stage Requirements</p>
+                    <div className="space-y-1">
+                        {stageRequirements.map((req, i) => (
+                            <div key={i} className="flex items-center space-x-2">
+                                {req.valid ? <CheckCircle2 size={12} className="text-green-500" /> : <XCircle size={12} className="text-red-500" />}
+                                <span className={`text-xs font-bold ${req.valid ? 'text-gray-700' : 'text-gray-500'}`}>{req.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <button 
+                onClick={handleNextStage}
+                disabled={!canAdvance || currentStageIndex === STAGES.length - 1}
+                className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-2xl flex items-center justify-center space-x-3 active:scale-[0.98] transition-all disabled:opacity-50 disabled:bg-gray-400"
+            >
+                <span>Complete {currentStage.label}</span>
+                <ArrowRight size={20} />
+            </button>
+        </div>
     </div>
   );
 };

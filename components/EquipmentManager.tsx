@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Wind, Power, Clock, RefreshCcw, LayoutGrid, List, Plus, X, Save, Box, Tag, Home, Calculator, Zap, AlertTriangle, CheckCircle2, ChevronRight, BrainCircuit, Loader2 } from 'lucide-react';
+import { Wind, Power, Clock, RefreshCcw, LayoutGrid, List, Plus, X, Save, Box, Tag, Home, Calculator, Zap, AlertTriangle, CheckCircle2, ChevronRight, BrainCircuit, Loader2, LogOut } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { useAppContext } from '../context/AppContext';
 import { Project, PlacedEquipment } from '../types';
@@ -15,8 +15,8 @@ const EQUIPMENT_SPECS: Record<string, { amps: number, volts: number, cfm: number
 
 const CIRCUIT_BREAKER_LIMIT_AMPS = 15;
 
-const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ isMobile = false, project }) => {
-  const { isOnline } = useAppContext();
+const EquipmentManager: React.FC<{isMobile?: boolean, project: Project, onUpdate?: (updates: Partial<Project>) => void}> = ({ isMobile = false, project, onUpdate }) => {
+  const { isOnline, accessToken } = useAppContext();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
@@ -48,7 +48,7 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
   useEffect(() => {
     if (isCalculatorOpen) {
       const getSuggestions = async () => {
-        if (!isOnline) {
+        if (!isOnline || !accessToken) {
             const offlineSuggestions: Record<string, string> = {};
             for (const room in calculationsByRoom) {
                 const totalAmps = calculationsByRoom[room].totalAmps;
@@ -60,7 +60,7 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
 
         setIsFetchingSuggestions(true);
         const suggestions: Record<string, string> = {};
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: accessToken });
         
         for (const room in calculationsByRoom) {
           const data = calculationsByRoom[room];
@@ -79,7 +79,7 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
       };
       getSuggestions();
     }
-  }, [isCalculatorOpen, calculationsByRoom, isOnline]);
+  }, [isCalculatorOpen, calculationsByRoom, isOnline, accessToken]);
   
   useEffect(() => {
     const timer = setInterval(() => {
@@ -96,13 +96,38 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
   }, []);
   
   const handleToggleStatus = (id: string) => {
-    setEquipment(prevEquipment =>
-      prevEquipment.map(item =>
-        item.id === id
-          ? { ...item, status: item.status === 'Running' ? 'Off' : 'Running' }
+    const updated = equipment.map(item =>
+        item.id === id && item.status !== 'Removed'
+          ? { ...item, status: item.status === 'Running' ? 'Off' : 'Running' } as PlacedEquipment
           : item
-      )
     );
+    setEquipment(updated);
+    if (onUpdate) onUpdate({ equipment: updated });
+  };
+
+  const handleRemoveEquipment = (id: string) => {
+      if (window.confirm("Are you sure you want to demobilize this equipment? This will permanently stop hour tracking.")) {
+          const updated = equipment.map(item => 
+                item.id === id ? { ...item, status: 'Removed' as any } : item
+            );
+          setEquipment(updated);
+          if (onUpdate) onUpdate({ equipment: updated });
+      }
+  };
+
+  const handleAddEquipment = () => {
+      // Mock adding equipment for demo purpose
+      const newItem: PlacedEquipment = {
+          id: `EQ-${Date.now().toString().slice(-4)}`,
+          type: 'Air Mover',
+          model: 'Phoenix AirMax',
+          status: 'Running',
+          hours: 0,
+          room: 'General'
+      };
+      const updated = [...equipment, newItem];
+      setEquipment(updated);
+      if (onUpdate) onUpdate({ equipment: updated });
   };
   
   const theme = {
@@ -113,6 +138,9 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
     itemBg: isMobile ? 'bg-white' : 'bg-white/5',
     itemBorder: isMobile ? 'border-gray-100' : 'border-white/10'
   };
+
+  const activeEquipment = equipment.filter(e => e.status !== 'Removed');
+  const removedEquipment = equipment.filter(e => e.status === 'Removed');
 
   return (
     <div className={`space-y-6 ${theme.bg}`}>
@@ -150,19 +178,47 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
       )}
 
       <div>
+        <div className="flex justify-between items-center mb-4">
+             <h3 className={`text-xs font-bold uppercase tracking-widest ${theme.subtext}`}>Deployed Assets</h3>
+             <button onClick={handleAddEquipment} className="text-[10px] bg-blue-500 text-white px-3 py-1 rounded-full font-bold shadow-sm">
+                 + Add Device
+             </button>
+        </div>
+        {activeEquipment.length === 0 && (
+            <div className={`p-8 text-center border-2 border-dashed rounded-xl ${isMobile ? 'border-gray-200' : 'border-gray-700'}`}>
+                <p className={`text-sm ${theme.subtext}`}>No equipment placed yet.</p>
+            </div>
+        )}
         {viewMode === 'grid' ? (
           <div className="space-y-4">
-            {equipment.map((item) => (
+            {activeEquipment.map((item) => (
               <div key={item.id} className={`${theme.card} p-4 rounded-2xl relative overflow-hidden`}>
                 {item.status === 'Running' && (<div className="absolute top-0 right-0 w-16 h-16"><div className="absolute transform rotate-45 bg-green-500 text-white text-[8px] font-bold py-1 px-8 top-3 -right-6 text-center uppercase">Active</div></div>)}
-                <div className="flex items-start space-x-4"><div className={`p-3 rounded-xl ${item.status === 'Running' ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-700 text-slate-500'}`}><Wind size={24} /></div><div className="flex-1"><div className="flex justify-between"><h3 className={`font-bold ${theme.text}`}>{item.model}</h3><span className={`text-[10px] font-bold ${theme.subtext}`}>{item.id}</span></div><div className={`text-xs ${theme.subtext} mt-0.5`}>{item.type} • {item.room}</div><div className="mt-4 flex items-center justify-between"><div className="flex items-center space-x-4"><div className={`flex items-center text-sm ${theme.subtext}`}><Clock size={14} className="mr-1" /> {item.hours}h</div></div><button onClick={() => handleToggleStatus(item.id)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${item.status === 'Running' ? 'border-red-500/20 text-red-400 bg-red-500/10' : 'border-green-500/20 text-green-400 bg-green-500/10'}`}><Power size={14} /><span>{item.status === 'Running' ? 'Turn Off' : 'Turn On'}</span></button></div></div></div>
+                <div className="flex items-start space-x-4">
+                    <div className={`p-3 rounded-xl ${item.status === 'Running' ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-700 text-slate-500'}`}><Wind size={24} /></div>
+                    <div className="flex-1">
+                        <div className="flex justify-between"><h3 className={`font-bold ${theme.text}`}>{item.model}</h3><span className={`text-[10px] font-bold ${theme.subtext}`}>{item.id}</span></div>
+                        <div className={`text-xs ${theme.subtext} mt-0.5`}>{item.type} • {item.room}</div>
+                        <div className="mt-4 flex items-center justify-between">
+                            <div className="flex items-center space-x-4"><div className={`flex items-center text-sm ${theme.subtext}`}><Clock size={14} className="mr-1" /> {item.hours}h</div></div>
+                            <div className="flex space-x-2">
+                                <button onClick={() => handleToggleStatus(item.id)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${item.status === 'Running' ? 'border-red-500/20 text-red-400 bg-red-500/10' : 'border-green-500/20 text-green-400 bg-green-500/10'}`}>
+                                    <Power size={14} /><span>{item.status === 'Running' ? 'Stop' : 'Start'}</span>
+                                </button>
+                                <button onClick={() => handleRemoveEquipment(item.id)} className="p-1.5 bg-gray-500/10 text-gray-400 rounded-lg hover:bg-red-500/10 hover:text-red-500 transition-colors" title="Demobilize/Remove">
+                                    <LogOut size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
               </div>
             ))}
           </div>
         ) : (
           <div className={`${theme.card} p-4 rounded-2xl`}>
-            {equipment.map((item, index) => (
-              <div key={item.id} className={`flex justify-between items-center py-3 ${index < equipment.length - 1 ? `border-b ${theme.itemBorder}` : ''}`}>
+            {activeEquipment.map((item, index) => (
+              <div key={item.id} className={`flex justify-between items-center py-3 ${index < activeEquipment.length - 1 ? `border-b ${theme.itemBorder}` : ''}`}>
                 <div className="flex items-center space-x-3">
                   <div className={`w-8 h-8 flex items-center justify-center rounded-lg ${item.status === 'Running' ? 'bg-blue-500/10 text-blue-400' : 'bg-slate-800 text-slate-500'}`}>
                     <Wind size={16} />
@@ -172,17 +228,32 @@ const EquipmentManager: React.FC<{isMobile?: boolean, project: Project}> = ({ is
                     <p className={`text-xs ${theme.subtext}`}>{item.id} &bull; {item.room}</p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
-                  <span className={`text-xs font-bold ${theme.subtext} w-12 text-right`}>{item.hours}h</span>
+                <div className="flex items-center space-x-2">
+                  <span className={`text-xs font-bold ${theme.subtext} w-12 text-right mr-2`}>{item.hours}h</span>
                   <button onClick={() => handleToggleStatus(item.id)} className={`w-16 text-center px-2 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors ${item.status === 'Running' ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-green-500/10 text-green-400 hover:bg-green-500/20'}`}>
                     {item.status === 'Running' ? 'Stop' : 'Start'}
                   </button>
+                  <button onClick={() => handleRemoveEquipment(item.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"><LogOut size={14}/></button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {removedEquipment.length > 0 && (
+          <div className="mt-8 pt-4 border-t border-gray-700/50 opacity-60">
+              <h3 className={`text-xs font-bold uppercase tracking-widest mb-4 ${theme.subtext}`}>Demobilized / Returned</h3>
+              <div className="space-y-2">
+                  {removedEquipment.map(item => (
+                      <div key={item.id} className="flex justify-between items-center p-3 rounded-lg bg-black/10">
+                          <span className={`text-xs ${theme.text}`}>{item.model} ({item.id})</span>
+                          <span className="text-xs font-mono font-bold text-gray-500">Final: {item.hours}h</span>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
     </div>
   );
 };
