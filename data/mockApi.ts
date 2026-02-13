@@ -90,6 +90,37 @@ const seedProjects: Project[] = [
         ]
       }
     ],
+    // Initial Moisture Matrix Data
+    dryingMonitor: [
+        {
+            id: 'tm-1',
+            name: 'Drywall 5/8"',
+            location: 'East Wall (Living Room)',
+            type: 'Drywall 5/8"',
+            dryGoal: 10,
+            initialReading: 99,
+            readings: [
+                { timestamp: Date.now() - 172800000, value: 99, dateStr: 'Oct 12' },
+                { timestamp: Date.now() - 86400000, value: 45, dateStr: 'Oct 13' },
+                { timestamp: Date.now(), value: 28, dateStr: 'Oct 14' }
+            ],
+            status: 'Wet'
+        },
+        {
+            id: 'tm-2',
+            name: 'Baseboard (MDF)',
+            location: 'South Wall (Kitchen)',
+            type: 'Baseboard (MDF)',
+            dryGoal: 12,
+            initialReading: 99,
+            readings: [
+                { timestamp: Date.now() - 172800000, value: 99, dateStr: 'Oct 12' },
+                { timestamp: Date.now() - 86400000, value: 95, dateStr: 'Oct 13' },
+                { timestamp: Date.now(), value: 88, dateStr: 'Oct 14' }
+            ],
+            status: 'Wet'
+        }
+    ],
     milestones: [],
     tasks: [],
     lineItems: [

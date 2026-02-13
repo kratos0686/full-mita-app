@@ -109,6 +109,39 @@ export interface ComplianceCheck {
     isCompleted: boolean;
 }
 
+export interface DailyNarrative {
+  id: string;
+  date: string;
+  timestamp: number;
+  content: string;
+  author: string;
+  tags: string[]; // e.g., 'Equipment', 'Monitoring', 'Communication'
+  generated: boolean;
+  attachments?: string[]; // IDs of photos linked to this log
+  // Rich Feed additions
+  entryType?: 'general' | 'drying' | 'photo' | 'equipment' | 'compliance' | 'voice';
+  data?: any; 
+}
+
+// --- NEW TYPES FOR MATERIAL TRACKING (MOISTURE MATRIX) ---
+export interface MaterialReading {
+    timestamp: number;
+    value: number; // Moisture Content % or Points
+    dateStr: string; // e.g. "Oct 12"
+}
+
+export interface TrackedMaterial {
+    id: string;
+    name: string; // e.g. "Drywall"
+    location: string; // e.g. "North Wall under window"
+    type: string;
+    dryGoal: number; // The target dry standard (e.g. 10%)
+    initialReading: number; // The baseline wet reading (e.g. 99%)
+    readings: MaterialReading[]; // History of readings
+    status: 'Wet' | 'Dry' | 'Removed';
+}
+// ---------------------------------------------------------
+
 export type ProjectStage = 'Intake' | 'Inspection' | 'Scope' | 'Stabilize' | 'Monitor' | 'Closeout';
 
 // Renamed from Project to LossFile to match "Mitigate" terminology
@@ -137,6 +170,8 @@ export interface Project {
   
   summary?: string;
   logs?: string;
+  dailyNarratives?: DailyNarrative[]; 
+  dryingMonitor?: TrackedMaterial[]; // New field for specific material tracking
   riskLevel: 'low' | 'medium' | 'high';
   rooms: Room[];
   
@@ -232,4 +267,5 @@ export type Tab =
     | 'photos'
     | 'admin'
     | 'reporting'
-    | 'billing';
+    | 'billing'
+    | 'smart-docs'; // Added smart-docs tab

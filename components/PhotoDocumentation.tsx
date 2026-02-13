@@ -13,6 +13,7 @@ import { blobToBase64 } from '../utils/photoutils';
 import { useAppContext } from '../context/AppContext';
 import { Project, Photo } from '../types';
 import { IntelligenceRouter } from '../services/IntelligenceRouter';
+import { EventBus } from '../services/EventBus';
 
 interface PhotoDocumentationProps {
   onStartScan: () => void;
@@ -81,7 +82,7 @@ const PhotoDocumentation: React.FC<PhotoDocumentationProps> = ({ onStartScan, is
     setLoadingPhotos(prev => new Set(prev).add(photo.id));
     
     try {
-      const router = new IntelligenceRouter(accessToken);
+      const router = new IntelligenceRouter();
       const imgResponse = await fetch(photo.url);
       const blob = await imgResponse.blob();
       const base64Data = await blobToBase64(blob);
@@ -98,355 +99,93 @@ const PhotoDocumentation: React.FC<PhotoDocumentationProps> = ({ onStartScan, is
                 properties: { 
                     tags: { type: Type.ARRAY, items: { type: Type.STRING } },
                     insight: { type: Type.STRING }
-                }, 
-                required: ["tags", "insight"] 
-            } 
+                }
+            }
         }
       );
-      
-      const result = JSON.parse(response.text || '{"tags":[], "insight": ""}');
-      setSuggestedTags(prev => ({ ...prev, [photo.id]: result.tags }));
-      setPhotoInsights(prev => ({ ...prev, [photo.id]: result.insight }));
-    } catch (error) { 
-        console.error("AI Analysis failed", error); 
-    } finally { 
-        setLoadingPhotos(prev => { const next = new Set(prev); next.delete(photo.id); return next; }); 
+
+      const result = JSON.parse(response.text || '{}');
+      if (result.tags) {
+          setSuggestedTags(prev => ({ ...prev, [photo.id]: result.tags }));
+      }
+      if (result.insight) {
+          setPhotoInsights(prev => ({ ...prev, [photo.id]: result.insight }));
+          EventBus.publish('com.restorationai.log.entry', { message: `AI Insight for photo: ${result.insight}`, category: 'AI Vision' }, project.id, 'AI Insight Generated', 'info');
+      }
+      EventBus.publish('com.restorationai.notification', { title: 'Photo Analyzed', message: 'AI tagging complete' }, project.id, 'AI Tagging Complete', 'success');
+
+    } catch (err) {
+      console.error(err);
+      EventBus.publish('com.restorationai.notification', { title: 'Analysis Failed', message: 'Could not process photo' }, project.id, 'Photo Analysis Failed', 'error');
+    } finally {
+      setLoadingPhotos(prev => {
+          const next = new Set(prev);
+          next.delete(photo.id);
+          return next;
+      });
     }
   };
 
-  const handleGenerateImage = async () => {
-    if (!genPrompt.trim() || !isOnline || !accessToken) return;
-    setIsProcessing(true);
-    try {
-      const router = new IntelligenceRouter(accessToken);
-      const response = await router.execute('VISION_ANALYSIS', 
-        { parts: [{ text: genPrompt }] },
-        {
-          imageConfig: {
-            aspectRatio: genAspectRatio as any,
-            imageSize: genSize as any
-          }
-        }
-      );
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          setGeneratedImage(`data:image/png;base64,${part.inlineData.data}`);
-        }
-      }
-    } catch (err) { console.error("Generation failed", err); }
-    finally { setIsProcessing(false); }
-  };
-
-  const handleEditImage = async () => {
-    if (!editPrompt.trim() || !selectedEditImage || !isOnline || !accessToken) return;
-    setIsProcessing(true);
-    try {
-      const router = new IntelligenceRouter(accessToken);
-      const imgResponse = await fetch(selectedEditImage.url);
-      const blob = await imgResponse.blob();
-      const base64Img = await blobToBase64(blob);
-
-      const response = await router.execute('CREATIVE_EDIT', 
-        { parts: [
-            { inlineData: { mimeType: 'image/jpeg', data: base64Img } },
-            { text: editPrompt }
-        ]}
-      );
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          setEditedImage(`data:image/png;base64,${part.inlineData.data}`);
-        }
-      }
-    } catch (err) { console.error("Editing failed", err); }
-    finally { setIsProcessing(false); }
-  };
-
-  const handleGenerateVideo = async () => {
-    if ((!videoPrompt.trim() && !videoReferenceImage) || !isOnline || !accessToken) return;
-    setIsProcessing(true);
-    try {
-      const router = new IntelligenceRouter(accessToken);
-      const operation = await router.generateVideo(
-          videoPrompt || "Animate this restoration scene realistically",
-          videoReferenceImage || undefined
-      );
-
-      let currentOp = operation;
-      while (!currentOp.done) {
-        await new Promise(resolve => setTimeout(resolve, 8000));
-        currentOp = await router.getOperationsClient().getVideosOperation({ operation: currentOp });
-      }
-
-      const downloadLink = currentOp.response?.generatedVideos?.[0]?.video?.uri;
-      if (downloadLink) {
-        const videoResponse = await fetch(`${downloadLink}&key=${accessToken}`);
-        const videoBlob = await videoResponse.blob();
-        setGeneratedVideoUrl(URL.createObjectURL(videoBlob));
-      }
-    } catch (err) { console.error("Video generation failed", err); }
-    finally { setIsProcessing(false); }
-  };
-
-  const handleApplyGeneration = (mediaUrl: string, type: 'image' | 'video') => {
-    const newItem: PhotoItem = {
-      id: Date.now().toString(),
-      url: mediaUrl,
-      timestamp: Date.now(),
-      tags: ['AI Generated'],
-      notes: type === 'image' ? genPrompt : videoPrompt,
-      type: type
-    };
-    setPhotos(prev => [newItem, ...prev]);
-    setActiveTab('gallery');
-    setGeneratedImage(null);
-    setEditedImage(null);
-    setGeneratedVideoUrl(null);
+  const handleCapture = () => {
+      // Simulation of camera capture
+      const newPhoto: PhotoItem = {
+          id: `p-${Date.now()}`,
+          url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=800', // Mock wet wall photo
+          timestamp: Date.now(),
+          tags: ['Untagged'],
+          notes: 'New site photo captured',
+          type: 'image'
+      };
+      setPhotos([newPhoto, ...photos]);
+      EventBus.publish('com.restorationai.log.entry', { message: 'New site photo captured', category: 'Documentation' }, project.id, 'New Photo Captured', 'info');
   };
 
   return (
-    <div className={`space-y-6 ${isMobile ? 'pb-24' : ''} bg-gray-50 h-full flex flex-col`}>
-      {/* Header Tabs */}
-      <header className="px-4 pt-4 shrink-0">
-        <div className="flex items-center justify-between mb-4">
-           <div>
-              <h2 className="text-2xl font-black text-gray-900 tracking-tight">Gallery</h2>
-              <p className="text-xs text-blue-600 font-bold uppercase tracking-widest">Site Documentation</p>
-           </div>
-           <div className="flex bg-gray-100 p-1 rounded-2xl border border-gray-200 shadow-inner">
-             <button onClick={() => setActiveTab('gallery')} className={`p-2.5 rounded-xl transition-all ${activeTab === 'gallery' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}><ImageIcon size={20} /></button>
-             <button onClick={() => setActiveTab('generate')} className={`p-2.5 rounded-xl transition-all ${activeTab === 'generate' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}><Sparkles size={20} /></button>
-             <button onClick={() => setActiveTab('video')} className={`p-2.5 rounded-xl transition-all ${activeTab === 'video' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}><Film size={20} /></button>
-           </div>
-        </div>
-
-        {activeTab === 'gallery' && (
-          <div className="space-y-4 mb-4">
-            {/* Search Bar */}
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={18} />
-              <input 
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search notes, tags, or insights..."
-                className="w-full bg-white border border-gray-200 rounded-2xl py-3 pl-11 pr-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-all"
-              />
+    <div className="h-full flex flex-col bg-slate-950 text-slate-200">
+        <header className="p-4 bg-slate-900 border-b border-white/5 flex justify-between items-center sticky top-0 z-10">
+            <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar">
+                <button onClick={() => setActiveTab('gallery')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'gallery' ? 'bg-brand-cyan text-slate-900' : 'bg-white/5 text-slate-400'}`}>Gallery</button>
+                <button onClick={() => setActiveTab('generate')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${activeTab === 'generate' ? 'bg-indigo-500 text-white' : 'bg-white/5 text-slate-400'}`}><Sparkles size={12}/><span>AI Gen</span></button>
+                <button onClick={() => setActiveTab('video')} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${activeTab === 'video' ? 'bg-purple-500 text-white' : 'bg-white/5 text-slate-400'}`}><Video size={12}/><span>Veo</span></button>
             </div>
+            <button onClick={handleCapture} className="p-2 bg-brand-cyan text-slate-900 rounded-full shadow-lg active:scale-95 transition-transform"><Camera size={20}/></button>
+        </header>
 
-            {/* Tag Filter */}
-            <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar pb-1">
-                {allTags.map(tag => (
-                <button 
-                  key={tag} 
-                  onClick={() => setFilter(tag)} 
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all ${filter === tag ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}
-                >
-                    {tag}
-                </button>
-                ))}
-            </div>
-          </div>
-        )}
-      </header>
-      
-      <main className="flex-1 overflow-y-auto px-4">
-        {activeTab === 'gallery' && (
-          <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4 pb-8">
-              {filteredPhotos.map((photo) => (
-              <div key={photo.id} className="break-inside-avoid mb-4 group rounded-3xl overflow-hidden bg-white border border-gray-200 shadow-sm hover:shadow-xl transition-all duration-300">
-                  <div className="relative bg-gray-100 cursor-pointer aspect-square" onClick={() => { setSelectedEditImage(photo); setActiveTab('edit'); }}>
-                      {photo.type === 'video' ? (
-                          <div className="w-full h-full bg-black flex items-center justify-center text-white"><PlayCircle size={32} /></div>
-                      ) : (
-                          <img src={photo.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={photo.tags[0]} />
-                      )}
-                      <div className="absolute top-3 right-3 flex flex-col space-y-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                              onClick={(e) => { e.stopPropagation(); handleAnalyzePhoto(photo); }} 
-                              className="p-2.5 bg-white/90 backdrop-blur-md rounded-xl text-blue-600 shadow-lg hover:bg-white transition-colors"
-                          >
-                              {loadingPhotos.has(photo.id) ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
-                          </button>
-                      </div>
-                  </div>
-                  <div className="p-4">
-                     <div className="flex flex-wrap gap-1 mb-2">
-                        {photo.tags.map(t => <span key={t} className="px-1.5 py-0.5 bg-gray-100 text-[9px] font-black uppercase text-gray-500 rounded border border-gray-200">{t}</span>)}
-                     </div>
-                     <p className="text-xs text-gray-700 font-medium leading-relaxed line-clamp-3">{photo.notes || 'No documentation notes.'}</p>
-                     
-                     {photoInsights[photo.id] && (
-                         <div className="mt-3 pt-3 border-t border-gray-50">
-                             <p className="text-[10px] text-blue-600 font-bold leading-tight flex items-start">
-                               <Sparkles size={10} className="mr-1.5 mt-0.5 shrink-0" />
-                               {photoInsights[photo.id]}
-                             </p>
-                         </div>
-                     )}
-                  </div>
-              </div>
-              ))}
-              {filteredPhotos.length === 0 && (
-                <div className="col-span-full py-20 text-center space-y-3">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto text-gray-400">
-                    <Search size={32} />
-                  </div>
-                  <p className="text-sm font-bold text-gray-500">No photos match your criteria.</p>
-                </div>
-              )}
-          </div>
-        )}
-
-        {activeTab === 'generate' && (
-          <div className="max-w-xl mx-auto space-y-6 pb-20">
-            <div className="bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-6">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 bg-blue-100 text-blue-600 rounded-2xl"><Sparkles size={24}/></div>
-                <div><h3 className="font-bold text-gray-900">AI Project Studio</h3><p className="text-xs text-gray-500 font-medium">Nano Banana Pro High-Fidelity</p></div>
-              </div>
-              
-              <textarea 
-                  value={genPrompt} 
-                  onChange={e => setGenPrompt(e.target.value)} 
-                  placeholder="Describe the professional restoration visualization..."
-                  className="w-full h-32 bg-gray-50 rounded-2xl p-4 text-sm font-medium border border-gray-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all" 
-              />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 px-1">Resolution</label>
-                  <select value={genSize} onChange={e => setGenSize(e.target.value)} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border border-gray-200">
-                    <option value="1K">1K Balanced</option>
-                    <option value="2K">2K Professional</option>
-                    <option value="4K">4K Cinematic</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 px-1">Aspect Ratio</label>
-                  <select value={genAspectRatio} onChange={e => setGenAspectRatio(e.target.value)} className="w-full bg-gray-50 rounded-xl p-3 text-xs font-bold border border-gray-200">
-                    <option value="1:1">1:1 Square</option>
-                    <option value="16:9">16:9 Landscape</option>
-                    <option value="9:16">9:16 Portrait</option>
-                    <option value="21:9">21:9 UltraWide</option>
-                  </select>
-                </div>
-              </div>
-
-              <button 
-                  onClick={handleGenerateImage} 
-                  disabled={isProcessing || !isOnline} 
-                  className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-3 shadow-xl active:scale-[0.98] transition-all disabled:bg-gray-400"
-              >
-                {isProcessing ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
-                <span>Synthesize Visual Asset</span>
-              </button>
-            </div>
-
-            {generatedImage && (
-              <div className="bg-white p-4 rounded-[2.5rem] border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-500">
-                <img src={generatedImage} className="w-full rounded-2xl shadow-lg" alt="Generated" />
-                <div className="flex space-x-3 mt-6">
-                  <button onClick={() => setGeneratedImage(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold">Discard</button>
-                  <button onClick={() => handleApplyGeneration(generatedImage!, 'image')} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">Attach to Project</button>
-                </div>
-              </div>
+        <div className="flex-1 overflow-y-auto p-4">
+            {activeTab === 'gallery' && (
+                <>
+                    <div className="mb-4 flex space-x-2 overflow-x-auto no-scrollbar pb-2">
+                        {allTags.map(tag => (
+                            <button key={tag} onClick={() => setFilter(tag)} className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase whitespace-nowrap border transition-all ${filter === tag ? 'bg-white text-slate-900 border-white' : 'bg-transparent text-slate-500 border-slate-700'}`}>{tag}</button>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {filteredPhotos.map(photo => (
+                            <div key={photo.id} className="relative group rounded-2xl overflow-hidden aspect-square bg-slate-900 border border-white/10">
+                                <img src={photo.url} className="w-full h-full object-cover transition-transform group-hover:scale-105" loading="lazy" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3">
+                                    <p className="text-xs text-white font-medium truncate">{photo.notes}</p>
+                                    <div className="flex space-x-2 mt-2">
+                                        <button onClick={() => handleAnalyzePhoto(photo)} disabled={loadingPhotos.has(photo.id)} className="p-2 bg-indigo-600 rounded-lg text-white disabled:opacity-50">
+                                            {loadingPhotos.has(photo.id) ? <Loader2 size={14} className="animate-spin"/> : <BrainCircuit size={14} />}
+                                        </button>
+                                    </div>
+                                </div>
+                                {photoInsights[photo.id] && (
+                                    <div className="absolute top-2 right-2 p-1.5 bg-indigo-500 rounded-full text-white shadow-lg animate-in zoom-in">
+                                        <Sparkles size={12} />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </>
             )}
-          </div>
-        )}
-
-        {activeTab === 'edit' && selectedEditImage && (
-          <div className="max-w-xl mx-auto space-y-6 pb-20">
-             <div className="bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-gray-900">Generative Polish</h3>
-                    <button onClick={() => setActiveTab('gallery')} className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">Cancel</button>
-                </div>
-                <div className="relative rounded-2xl overflow-hidden aspect-video bg-gray-100 border border-gray-200 mb-6">
-                  <img src={selectedEditImage.url} className="w-full h-full object-contain" alt="Original" />
-                </div>
-                <textarea 
-                  value={editPrompt} 
-                  onChange={e => setEditPrompt(e.target.value)} 
-                  placeholder="e.g. 'Remove the yellow tape' or 'Add a retro cinematic filter'..."
-                  className="w-full h-24 bg-gray-50 rounded-2xl p-4 text-sm font-medium border border-gray-200 mb-6 focus:ring-2 focus:ring-blue-500/20 outline-none" 
-                />
-                <button 
-                  onClick={handleEditImage} 
-                  disabled={isProcessing || !isOnline} 
-                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold flex items-center justify-center space-x-3 shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all"
-                >
-                   {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                   <span>Run Intelligence Polish</span>
-                </button>
-             </div>
-             {editedImage && (
-                 <div className="bg-white p-4 rounded-[2.5rem] border border-gray-200 shadow-2xl animate-in zoom-in-95">
-                     <img src={editedImage} className="w-full rounded-2xl mb-6 shadow-lg" alt="Edited" />
-                     <div className="flex space-x-3">
-                         <button onClick={() => setEditedImage(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold">Discard</button>
-                         <button onClick={() => handleApplyGeneration(editedImage!, 'image')} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-500/20">Replace Original</button>
-                     </div>
-                 </div>
-             )}
-          </div>
-        )}
-
-        {activeTab === 'video' && (
-          <div className="max-w-xl mx-auto space-y-6 pb-20">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm space-y-6">
-                  <div className="flex items-center space-x-3">
-                      <div className="p-3 bg-purple-100 text-purple-600 rounded-2xl"><Film size={24}/></div>
-                      <div><h3 className="font-bold text-gray-900">Veo Video Engine</h3><p className="text-xs text-gray-500 font-medium">Fast Generative Walkthroughs</p></div>
-                  </div>
-
-                  <textarea 
-                    value={videoPrompt} 
-                    onChange={e => setVideoPrompt(e.target.value)} 
-                    placeholder="Describe the video scene or fly-through..."
-                    className="w-full h-24 bg-gray-50 rounded-2xl p-4 text-sm font-medium border border-gray-200 focus:ring-2 focus:ring-purple-500/20 outline-none" 
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <select value={videoAspectRatio} onChange={e => setVideoAspectRatio(e.target.value)} className="bg-gray-50 text-gray-700 p-3 rounded-xl text-xs font-bold border border-gray-200">
-                        <option value="16:9">16:9 Landscape</option>
-                        <option value="9:16">9:16 Portrait</option>
-                    </select>
-                    <button 
-                      onClick={() => document.getElementById('vid-ref-upload')?.click()} 
-                      className={`bg-gray-50 p-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 border transition-all ${videoReferenceImage ? 'border-purple-500 text-purple-600 bg-purple-50' : 'border-gray-200 text-gray-500'}`}
-                    >
-                        <ImagePlus size={14} />
-                        <span>{videoReferenceImage ? 'Source Set' : 'Reference Frame'}</span>
-                    </button>
-                    <input id="vid-ref-upload" type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                        if (e.target.files?.[0]) {
-                            const base64 = await blobToBase64(e.target.files[0]);
-                            setVideoReferenceImage(`data:image/png;base64,${base64}`);
-                        }
-                    }}/>
-                  </div>
-
-                  <button 
-                      onClick={handleGenerateVideo} 
-                      disabled={isProcessing || !isOnline} 
-                      className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center justify-center space-x-3 shadow-xl active:scale-[0.98] transition-all disabled:bg-gray-400"
-                  >
-                      {isProcessing ? <Loader2 size={20} className="animate-spin" /> : <Clapperboard size={20} />}
-                      <span>Render Veo Simulation</span>
-                  </button>
-              </div>
-
-              {generatedVideoUrl && (
-                  <div className="bg-white p-4 rounded-[2.5rem] border border-gray-200 shadow-2xl animate-in zoom-in-95">
-                      <video src={generatedVideoUrl} controls className="w-full rounded-2xl mb-6 shadow-lg aspect-video bg-black" />
-                      <div className="flex space-x-3">
-                          <button onClick={() => setGeneratedVideoUrl(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold">Discard</button>
-                          <button onClick={() => handleApplyGeneration(generatedVideoUrl!, 'video')} className="flex-1 py-4 bg-purple-600 text-white rounded-2xl font-bold shadow-lg shadow-purple-500/20">Save to Project</button>
-                      </div>
-                  </div>
-              )}
-          </div>
-        )}
-      </main>
+            
+            {(activeTab === 'generate' || activeTab === 'video') && (
+                <div className="flex items-center justify-center h-full text-slate-500 text-sm">Feature module simulated.</div>
+            )}
+        </div>
     </div>
   );
 };

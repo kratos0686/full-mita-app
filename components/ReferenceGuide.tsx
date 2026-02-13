@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { BookOpen, ArrowLeft, Wind, Droplets, Target, Zap, Search, Globe, Loader2, ChevronRight, WifiOff } from 'lucide-react';
+import { BookOpen, ArrowLeft, Wind, Droplets, Search, Globe, Loader2, ChevronRight, WifiOff } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { useAppContext } from '../context/AppContext';
 
@@ -9,16 +9,16 @@ interface ReferenceGuideProps {
 }
 
 const ReferenceGuide: React.FC<ReferenceGuideProps> = ({ onBack }) => {
-  const { isOnline, accessToken } = useAppContext();
+  const { isOnline } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   const handleSearch = async () => {
-    if (!searchQuery.trim() || !isOnline || !accessToken) return;
+    if (!searchQuery.trim() || !isOnline) return;
     setIsSearching(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: accessToken });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Research this IICRC SR-500 topic: ${searchQuery}`,

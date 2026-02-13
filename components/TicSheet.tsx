@@ -1,8 +1,10 @@
 
 import React, { useState } from 'react';
-import { ArrowLeft, ChevronDown, List, MoreVertical, CheckSquare, Square, FileSpreadsheet, Tag, BookOpen, Zap } from 'lucide-react';
+import { ArrowLeft, ChevronDown, List, MoreVertical, CheckSquare, Square, FileSpreadsheet, Tag, BookOpen, Zap, Sparkles, Loader2, Wand2 } from 'lucide-react';
 import { LossFile, LineItem } from '../types';
 import { useAppContext } from '../context/AppContext';
+import { IntelligenceRouter } from '../services/IntelligenceRouter';
+import { EventBus } from '../services/EventBus';
 
 interface TicSheetProps {
     project: LossFile;
@@ -11,103 +13,112 @@ interface TicSheetProps {
     embedded?: boolean;
 }
 
-// Mock categories based on IICRC
-const CATEGORIES = [
-    { id: 'bath', label: 'BATH CLEAN', items: [
-        { code: 'CLN [AC]', desc: 'Clean acoustic ceiling (popcorn) texture' },
-        { code: 'CLN [AV]', desc: 'Clean {V}' },
-        { code: 'CLN [B]', desc: 'Clean baseboard' },
-        { code: 'CLN [BAC]', desc: 'Clean bath accessory' },
-        { code: 'CLN [BAR]', desc: 'Clean light bar' },
-    ]},
-    { id: 'water', label: 'WATER EXTRACTION', items: [
-        { code: 'WTR [EXT]', desc: 'Water extraction from floor' },
-        { code: 'WTR [DRY]', desc: 'Tear out wet drywall' },
-    ]}
-];
-
 const TicSheet: React.FC<TicSheetProps> = ({ project, onBack, embedded = false }) => {
-    const { setActiveTab } = useAppContext();
-    const [selectedCategory, setSelectedCategory] = useState('Bath Clean');
-    const [viewMode, setViewMode] = useState<'worksheet' | 'category' | 'reference' | 'macro'>('macro');
+    const { accessToken, isOnline } = useAppContext();
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [lineItems, setLineItems] = useState<LineItem[]>(project.lineItems || []);
+    const [viewMode, setViewMode] = useState<'worksheet' | 'category' | 'reference' | 'macro'>('worksheet');
 
-    const VIEWS = [
-        { id: 'worksheet', icon: <FileSpreadsheet size={20} />, label: 'Sheet' },
-        { id: 'category', icon: <Tag size={20} />, label: 'Cats' },
-        { id: 'reference', icon: <BookOpen size={20} />, label: 'Ref' },
-        { id: 'macro', icon: <Zap size={20} />, label: 'Macro' },
-    ] as const;
+    const handleAutoScope = async () => {
+        if (!isOnline || !accessToken) return;
+        setIsGenerating(true);
+        try {
+            const router = new IntelligenceRouter();
+            // Prepare context from scans and project metadata
+            const scanData = project.roomScans.map(s => `${s.roomName}: ${s.dimensions.sqft} sqft`).join(', ');
+            const context = `Project at ${project.address}. Scans: ${scanData}. Category: ${project.waterCategory}. Class: ${project.lossClass}.`;
+            
+            const response = await router.generateScope(context);
+            const data = JSON.parse(response.text || '{}');
+            
+            if (data.lineItems) {
+                const formatted = data.lineItems.map((item: any, i: number) => ({
+                    id: `ai-${Date.now()}-${i}`,
+                    code: item.code,
+                    description: item.description,
+                    quantity: item.quantity,
+                    rate: item.rate,
+                    total: item.quantity * item.rate,
+                    category: 'AI Generated'
+                }));
+                setLineItems(formatted);
+                EventBus.publish('com.restorationai.log.entry', {
+                    message: `AI Scope generated ${formatted.length} line items based on scan data.`,
+                    category: 'Scoping'
+                }, project.id, `AI Scope generated ${formatted.length} items`, 'success');
+            }
+        } catch (err) {
+            console.error("Auto-scope failed", err);
+            EventBus.publish('com.restorationai.notification', { title: 'Scope Failed', message: 'Could not generate AI scope.' }, project.id, 'Scope generation failed', 'error');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
 
     return (
-        <div className="flex flex-col h-full bg-gray-100">
+        <div className="flex flex-col h-full bg-slate-950 text-slate-200">
             {!embedded && (
-                <header className="bg-[#0078d4] text-white pt-4 pb-2 shadow-md z-10">
-                    <div className="flex items-center px-4 mb-2">
-                        <button onClick={onBack} className="mr-4"><ArrowLeft size={24} /></button>
+                <header className="bg-slate-900 border-b border-white/10 p-4 flex justify-between items-center sticky top-0 z-20">
+                    <div className="flex items-center space-x-3">
+                        <button onClick={onBack}><ArrowLeft size={24} /></button>
                         <div>
-                            <h1 className="text-lg font-bold leading-tight">{project.client}</h1>
-                            <h2 className="text-base font-normal leading-tight">Line Items</h2>
+                            <h1 className="text-xl font-black text-white">Line Items</h1>
+                            <p className="text-[10px] text-brand-cyan font-black uppercase tracking-widest">Financial Forensics</p>
                         </div>
                     </div>
+                    <button 
+                        onClick={handleAutoScope} 
+                        disabled={isGenerating || !isOnline}
+                        className="bg-brand-cyan text-slate-950 px-4 py-2 rounded-full text-xs font-black flex items-center space-x-2 shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50"
+                    >
+                        {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                        <span>AI Scope</span>
+                    </button>
                 </header>
             )}
 
-            {/* Symbol-Based Filter Bar */}
-            <div className="bg-white px-4 py-3 border-b border-gray-200">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-[#0078d4] font-bold text-lg">All</h3>
-                    <ChevronDown className="text-[#0078d4]" size={20} />
-                </div>
-                
-                <div className="flex justify-between items-center px-2">
-                    {VIEWS.map(v => (
-                        <button 
-                            key={v.id} 
-                            onClick={() => setViewMode(v.id as any)}
-                            className={`flex flex-col items-center space-y-1 transition-colors ${viewMode === v.id ? 'text-[#0078d4]' : 'text-gray-400 hover:text-gray-600'}`}
-                        >
-                            <div className={`p-2 rounded-xl ${viewMode === v.id ? 'bg-blue-50' : 'bg-transparent'}`}>
-                                {v.icon}
-                            </div>
-                            <span className="text-[10px] font-bold uppercase tracking-wider">{v.label}</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Macro Selector */}
-            <div className="px-4 py-3 bg-white border-b border-gray-200">
-                <div className="relative border border-gray-300 rounded-md p-2 flex justify-between items-center bg-white">
-                    <span className="text-xs text-[#0078d4] absolute -top-2 left-2 bg-white px-1 font-bold">Macro</span>
-                    <span className="font-bold text-gray-900">{selectedCategory}</span>
-                    <ChevronDown size={16} className="text-[#0078d4]" />
-                </div>
-            </div>
-
-            {/* List */}
-            <div className="flex-1 overflow-y-auto p-2">
-                <div className="flex justify-between items-center px-2 mb-2">
-                    <span className="font-bold text-gray-700 uppercase">{selectedCategory}</span>
-                    <button className="text-[#0078d4] font-bold text-sm">Select All</button>
-                </div>
-
-                <div className="space-y-2">
-                    {CATEGORIES[0].items.map((item, idx) => (
-                        <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 flex items-start">
-                            <div className="pt-1 mr-3 text-gray-400">
-                                <List size={20} />
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex justify-between items-start">
-                                    <h4 className="font-bold text-gray-900">{item.code}</h4>
-                                    <ChevronDown size={16} className="text-[#0078d4]" />
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+                {lineItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
+                        <FileSpreadsheet size={64} className="mb-4" />
+                        <p className="font-bold text-sm">No items documented.<br/>Run AI Scope to generate from field scans.</p>
+                    </div>
+                ) : (
+                    lineItems.map((item) => (
+                        <div key={item.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 group hover:border-brand-cyan/50 transition-all">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                    <span className="text-[10px] font-black text-brand-cyan bg-brand-cyan/10 px-2 py-0.5 rounded uppercase mr-2">{item.code}</span>
+                                    <h4 className="inline font-bold text-white text-sm">{item.description}</h4>
                                 </div>
-                                <p className="text-sm text-gray-600 font-medium leading-snug mt-1">{item.desc}</p>
+                                <button className="p-1.5 hover:bg-white/10 rounded-lg"><MoreVertical size={14}/></button>
+                            </div>
+                            <div className="flex justify-between items-end">
+                                <div className="flex space-x-4">
+                                    <div><span className="block text-[8px] font-black text-slate-500 uppercase">Qty</span><span className="font-mono text-xs text-slate-300">{item.quantity}</span></div>
+                                    <div><span className="block text-[8px] font-black text-slate-500 uppercase">Rate</span><span className="font-mono text-xs text-slate-300">${item.rate.toFixed(2)}</span></div>
+                                </div>
+                                <div className="text-right">
+                                    <span className="block text-[8px] font-black text-slate-500 uppercase">Total</span>
+                                    <span className="font-black text-brand-cyan text-lg">${item.total.toFixed(2)}</span>
+                                </div>
                             </div>
                         </div>
-                    ))}
-                </div>
+                    ))
+                )}
             </div>
+
+            {embedded && (
+                <div className="absolute bottom-4 right-4">
+                    <button 
+                        onClick={handleAutoScope} 
+                        disabled={isGenerating || !isOnline}
+                        className="bg-brand-cyan text-slate-950 p-4 rounded-2xl shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                    >
+                        {isGenerating ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} />}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

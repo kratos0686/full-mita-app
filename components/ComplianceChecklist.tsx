@@ -4,6 +4,7 @@ import { Project, ComplianceCheck } from '../types';
 import { ShieldCheck, Microscope, CheckCircle2, AlertTriangle, Clock, BrainCircuit, Loader2, Sparkles, X, WifiOff } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { useAppContext } from '../context/AppContext';
+import { EventBus } from '../services/EventBus';
 
 interface ComplianceChecklistProps {
     project: Project;
@@ -40,6 +41,18 @@ const ComplianceChecklist: React.FC<ComplianceChecklistProps> = ({ project, onUp
         const updatedList = checklist.map(c => c.id === checkId ? { ...c, isCompleted: !c.isCompleted } : c);
         setChecklist(updatedList);
         
+        const toggledItem = updatedList.find(c => c.id === checkId);
+        if (toggledItem) {
+            // Publish Compliance Event
+            EventBus.publish(
+                'com.restorationai.compliance.updated',
+                { checkId: toggledItem.id, text: toggledItem.text, status: toggledItem.isCompleted },
+                project.id,
+                `Compliance Item "${toggledItem.text}" marked as ${toggledItem.isCompleted ? 'Complete' : 'Incomplete'}`,
+                'info'
+            );
+        }
+
         if (onUpdate) {
             onUpdate({
                 complianceChecks: {

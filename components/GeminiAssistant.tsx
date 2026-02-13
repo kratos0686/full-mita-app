@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Send, X, Bot, Zap, BookOpen, AlertCircle, Mic, MicOff, Volume2, Loader2, Brain, VolumeX, WifiOff, FileAudio } from 'lucide-react';
+import { Bot, X, Mic, Send, VolumeX, Loader2 } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { useAppContext } from '../context/AppContext';
 import { encode, decode, decodeAudioData } from '../utils/audio';
@@ -12,7 +12,7 @@ interface GeminiAssistantProps {
 }
 
 const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onClose }) => {
-  const { isOnline, accessToken } = useAppContext();
+  const { isOnline } = useAppContext();
   const [input, setInput] = useState('');
   const [isLive, setIsLive] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([
@@ -28,11 +28,11 @@ const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onCl
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
-    if ((!isOnline || !accessToken) && isOpen) {
-      setMessages(prev => [...prev, { role: 'ai', text: "I am currently offline or unauthorized. Please reconnect to access AI intelligence." }]);
+    if (!isOnline && isOpen) {
+      setMessages(prev => [...prev, { role: 'ai', text: "I am currently offline. Please reconnect to access AI intelligence." }]);
       if (isLive) stopLive();
     }
-  }, [isOnline, isOpen, accessToken]);
+  }, [isOnline, isOpen, isLive]);
 
   useEffect(() => {
     return () => {
@@ -58,7 +58,7 @@ const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onCl
   };
 
   const startLiveSession = async () => {
-    if (!isOnline || !accessToken) return;
+    if (!isOnline) return;
     setIsLive(true);
     
     // Initialize Audio Contexts
@@ -70,7 +70,7 @@ const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onCl
     
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     
-    const ai = new GoogleGenAI({ apiKey: accessToken });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     sessionPromiseRef.current = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
@@ -153,14 +153,14 @@ const GeminiAssistant: React.FC<GeminiAssistantProps> = ({ context, isOpen, onCl
   };
 
   const handleSendMessage = async () => {
-    if (!input.trim() || !isOnline || !accessToken) return;
+    if (!input.trim() || !isOnline) return;
     const msg = input;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: msg }]);
     setIsTyping(true);
 
     try {
-        const ai = new GoogleGenAI({ apiKey: accessToken });
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: `Context: ${context}. User: ${msg}`,

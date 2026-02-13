@@ -7,7 +7,6 @@ import {
   AlertTriangle, 
   Share2, 
   ArrowLeft,
-  CheckCircle2,
   Droplets
 } from 'lucide-react';
 import { 
@@ -29,7 +28,7 @@ interface PredictiveAnalysisProps {
 }
 
 const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
-  const { selectedProjectId, isOnline, accessToken } = useAppContext();
+  const { selectedProjectId, isOnline } = useAppContext();
   const [isAnalyzing, setIsAnalyzing] = useState(true);
   const [predictionData, setPredictionData] = useState<any>(null);
 
@@ -40,7 +39,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
       const project = await getProjectById(selectedProjectId);
       if (!project) return;
 
-      if (!isOnline || !accessToken) {
+      if (!isOnline) {
           // Offline Fallback
           setPredictionData({
               estimatedDryDate: 'Pending Sync',
@@ -54,7 +53,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
       }
 
       try {
-        const ai = new GoogleGenAI({ apiKey: accessToken }); // Using OAuth Token
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
         // Prepare context from project logs
         const logsContext = JSON.stringify(project.rooms.flatMap(r => r.readings));
@@ -114,7 +113,7 @@ const PredictiveAnalysis: React.FC<PredictiveAnalysisProps> = ({ onBack }) => {
     };
 
     generatePrediction();
-  }, [selectedProjectId, isOnline, accessToken]);
+  }, [selectedProjectId, isOnline]);
 
   if (isAnalyzing) {
     return (
