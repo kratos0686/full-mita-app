@@ -1,0 +1,35 @@
+steps:
+  # Step 1: Install dependencies
+  - name: 'python:3.10'
+    entrypoint: pip
+    args: ['install', '-r', 'requirements.txt', 'pytest']
+
+  # Step 2: Run Automated Evaluations (Model Testing)
+  - name: 'python:3.10'
+    entrypoint: python
+    args: ['-m', 'pytest', 'tests/eval_tests.py']
+    env:
+      - 'API_KEY=$_GEMINI_API_KEY'
+
+  # Step 3: Build the Docker Image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/gemini-app:$COMMIT_SHA', '.']
+
+  # Step 4: Push the Image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/gemini-app:$COMMIT_SHA']
+
+  # Step 5: Deploy to Cloud Run (Serverless)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'gemini-service'
+      - '--image=gcr.io/$PROJECT_ID/gemini-app:$COMMIT_SHA'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/gemini-app:$COMMIT_SHA'
