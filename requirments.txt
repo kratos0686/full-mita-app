@@ -1,0 +1,4 @@
+google-generativeai
+flask  # or fastapi
+gunicorn
+python-dotenv
